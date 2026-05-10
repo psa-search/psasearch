@@ -1,25 +1,61 @@
 import CardGrid from '@/components/CardGrid'
+import { searchCards, getPriceChart, calcTrend, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
 import type { CardWithTrend } from '@/types'
 
 interface Props {
   searchParams: Promise<{ brand?: string; page?: string }>
 }
 
-async function fetchCards(brand: string, page: number): Promise<CardWithTrend[]> {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
-  const res = await fetch(
-    `${baseUrl}/api/cards?brand=${brand}&page=${page}`,
-    { next: { revalidate: 3600 } }
-  )
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.cards ?? []
+async function getCards(brand: 'pokemon' | 'onepiece', page: number): Promise<CardWithTrend[]> {
+  try {
+    const listings = await searchCards(brand, page)
+
+    const cards: CardWithTrend[] = await Promise.all(
+      listings.slice(0, 20).map(async (listing) => {
+        const [chartPsa10, chartPsa9] = await Promise.all([
+          getPriceChart(listing.apparelId, CONDITION_PSA10, 'oneMonth'),
+          getPriceChart(listing.apparelId, CONDITION_PSA9, 'oneMonth'),
+        ])
+
+        const latestPsa10 = chartPsa10.points.at(-1)?.price ?? null
+        const latestPsa9 = chartPsa9.points.at(-1)?.price ?? null
+        const priceDiff =
+          latestPsa10 !== null && latestPsa9 !== null ? latestPsa10 - latestPsa9 : null
+        const trendPercent = calcTrend(chartPsa10.points)
+
+        return {
+          id: listing.apparelId,
+          name: listing.name,
+          localizedName: listing.localizedName,
+          imageUrl: listing.imageUrl,
+          productNumber: listing.productNumber,
+          currentPricePsa10: latestPsa10,
+          currentPricePsa9: latestPsa9,
+          priceDiff,
+          trendPercent,
+          chartPsa10: chartPsa10.points,
+          chartPsa9: chartPsa9.points,
+        }
+      })
+    )
+
+    cards.sort((a, b) => {
+      if (a.trendPercent === null && b.trendPercent === null) return 0
+      if (a.trendPercent === null) return 1
+      if (b.trendPercent === null) return -1
+      return b.trendPercent - a.trendPercent
+    })
+
+    return cards
+  } catch {
+    return []
+  }
 }
 
 export default async function Home({ searchParams }: Props) {
   const { brand = 'pokemon', page = '1' } = await searchParams
   const currentPage = parseInt(page)
-  const cards = await fetchCards(brand, currentPage)
+  const cards = await getCards(brand as 'pokemon' | 'onepiece', currentPage)
 
   return (
     <main className="min-h-screen bg-gray-900 text-white">
