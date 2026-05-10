@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPriceChart, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import { getPriceChart, getSalesHistory, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
 import type { PricePoint } from '@/types'
 
 /** allデータから直近N日分を切り出す */
@@ -22,11 +22,12 @@ export async function GET(
   }
 
   try {
-    const [chartPsa10All, chartPsa9All, chartPsa10Month, chartPsa9Month] = await Promise.all([
+    const [chartPsa10All, chartPsa9All, chartPsa10Month, chartPsa9Month, salesHistory] = await Promise.all([
       getPriceChart(apparelId, CONDITION_PSA10, 'all'),
       getPriceChart(apparelId, CONDITION_PSA9, 'all'),
       getPriceChart(apparelId, CONDITION_PSA10, 'oneMonth'),
       getPriceChart(apparelId, CONDITION_PSA9, 'oneMonth'),
+      getSalesHistory(apparelId),
     ])
 
     // 全期間データが3ヶ月以上あれば直近90日を切り出す
@@ -42,6 +43,7 @@ export async function GET(
       chartPsa10ThreeMonths: psa10ThreeMonths,
       chartPsa9ThreeMonths: psa9ThreeMonths,
       hasThreeMonths: psa10ThreeMonths.length > 0 && chartPsa10All.points.length > psa10ThreeMonths.length,
+      salesHistory,
     })
   } catch (err) {
     console.error(err)

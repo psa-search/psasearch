@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import PriceChart from '@/components/PriceChart'
-import type { PricePoint } from '@/types'
+import type { PricePoint, SalesRecord } from '@/types'
 
 interface CardDetail {
   apparelId: number
@@ -14,6 +14,7 @@ interface CardDetail {
   chartPsa10ThreeMonths: PricePoint[]
   chartPsa9ThreeMonths: PricePoint[]
   hasThreeMonths: boolean
+  salesHistory: SalesRecord[]
 }
 
 type Range = 'week' | 'month' | 'threeMonths' | 'all'
@@ -131,6 +132,47 @@ export default function CardDetailPage() {
               <h2 className="text-sm font-medium text-gray-300 mb-4">価格推移（スニダン）</h2>
               <PriceChart psa10={psa10} psa9={psa9} height={350} />
             </div>
+
+            {/* 販売履歴 */}
+            {detail.salesHistory.length > 0 && (
+              <div className="mt-6 bg-gray-800 rounded-xl p-4">
+                <h2 className="text-sm font-medium text-gray-300 mb-3">販売履歴</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 text-xs border-b border-gray-700">
+                        <th className="text-left pb-2">グレード</th>
+                        <th className="text-right pb-2">価格</th>
+                        <th className="text-right pb-2">日時</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.salesHistory.map((record, i) => (
+                        <tr key={i} className="border-b border-gray-700/50 last:border-0">
+                          <td className="py-2">
+                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                              record.condition === 'PSA10'
+                                ? 'bg-amber-500/20 text-amber-400'
+                                : record.condition === 'PSA9'
+                                ? 'bg-gray-600 text-gray-300'
+                                : 'bg-gray-700 text-gray-400'
+                            }`}>
+                              {record.condition}
+                            </span>
+                          </td>
+                          <td className="py-2 text-right font-medium">
+                            ¥{record.price.toLocaleString()}
+                          </td>
+                          <td className="py-2 text-right text-gray-400 text-xs">
+                            {record.date}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* スニダンへのリンク */}
             <div className="mt-6">

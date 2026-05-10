@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio'
 import { unstable_cache } from 'next/cache'
-import type { PriceChart, PricePoint, SearchResult } from '@/types'
+import type { PriceChart, PricePoint, SearchResult, SalesRecord } from '@/types'
 
 const BASE = 'https://snkrdunk.com'
 
@@ -121,6 +121,29 @@ export const getPriceChart = unstable_cache(
   _getPriceChart,
   ['snidan-chart'],
   { revalidate: TTL_CHART }
+)
+
+/**
+ * 販売履歴を取得
+ */
+async function _getSalesHistory(apparelId: number, perPage = 20): Promise<SalesRecord[]> {
+  const url = `${BASE}/v1/apparels/${apparelId}/sales-history?size_id=0&page=1&per_page=${perPage}`
+
+  const res = await fetch(url, { headers: HEADERS })
+  if (!res.ok) return []
+
+  const data = await res.json()
+  return (data.history || []).map((h: { price: number; date: string; condition: string }) => ({
+    price: h.price,
+    date: h.date,
+    condition: h.condition,
+  }))
+}
+
+export const getSalesHistory = unstable_cache(
+  _getSalesHistory,
+  ['snidan-sales-history'],
+  { revalidate: TTL_SEARCH }
 )
 
 /**

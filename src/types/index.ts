@@ -54,6 +54,12 @@ export interface PsaCardData {
   salesCount: number
 }
 
+export interface SalesRecord {
+  price: number
+  date: string
+  condition: string
+}
+
 export interface SearchResult {
   apparelId: number
   listingId: number
