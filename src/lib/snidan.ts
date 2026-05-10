@@ -23,7 +23,7 @@ const TTL_CHART = 86400      // チャート: 1日
  */
 async function _searchCards(brand: 'pokemon' | 'onepiece', page: number): Promise<SearchResult[]> {
   const categoryIds = brand === 'pokemon' ? '6%2F33' : '6'
-  const url = `${BASE}/search?searchCategoryIds=${categoryIds}&brandIds=${brand}&sort=recommend&itemConditions=psa_10&itemSizes=quantity_1&isSaleOnly=true&page=${page}`
+  const url = `${BASE}/search?searchCategoryIds=${categoryIds}&brandIds=${brand}&sort=hottest&itemSizes=quantity_1&isSaleOnly=true&page=${page}`
 
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Snidan search failed: ${res.status}`)
