@@ -172,6 +172,7 @@ export async function getPriceChart(
   if (chart.points.length > 0) {
     try {
       const { supabase } = await import('./supabase')
+      if (!supabase) throw new Error('Supabase not available')
       await supabase.from('snidan_price_charts').upsert([{
         apparel_id: apparelId,
         condition_id: conditionId,
@@ -274,6 +275,7 @@ export async function getSalesHistory(apparelId: number, conditionId: number): P
   if (history.length > 0) {
     try {
       const { supabase } = await import('./supabase')
+      if (!supabase) throw new Error('Supabase not available')
       await supabase.from('snidan_sales_history').upsert([{
         apparel_id: apparelId,
         condition_id: conditionId,
@@ -343,6 +345,8 @@ export async function getCardInfo(apparelId: number): Promise<{ name: string | n
   // DB キャッシュから取得を試みる
   try {
     const { supabase } = await import('./supabase')
+    if (!supabase) throw new Error('Supabase not available')
+
     const { data } = await supabase
       .from('snidan_cards')
       .select('card_name, card_image_url')
@@ -366,6 +370,7 @@ export async function getCardInfo(apparelId: number): Promise<{ name: string | n
   if (cardInfo.name || cardInfo.imageUrl) {
     try {
       const { supabase } = await import('./supabase')
+      if (!supabase) throw new Error('Supabase not available')
       await supabase.from('snidan_cards').upsert([{
         apparel_id: apparelId,
         card_name: cardInfo.name,
