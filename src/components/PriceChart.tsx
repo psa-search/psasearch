@@ -78,8 +78,7 @@ export default function PriceChart({ psa10, psa9, psa10Official, psa9Official, h
           tickFormatter={(v) => `¥${v.toLocaleString()}`}
           tick={{ fontSize: 11, fill: '#000000' }}
           stroke="#000000"
-          position="insideLeft"
-          width={50}
+          width={45}
         />
         <Tooltip
           formatter={(value) => typeof value === 'number' ? formatPrice(value) : String(value)}
