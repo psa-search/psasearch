@@ -108,6 +108,11 @@ export default async function Home({ searchParams }: Props) {
             )}
           </form>
 
+        {/* 最終更新日 */}
+        <div className="text-xs text-gray-500 mb-4">
+          最終更新: {new Date().toLocaleString('ja-JP')}
+        </div>
+
         {/* ブランド切り替え */}
         <div className="flex gap-4 mb-6">
           {[

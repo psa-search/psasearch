@@ -32,13 +32,13 @@ export default function CardGrid({ cards }: Props) {
               className="flex items-start gap-3 bg-white border border-gray-300 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
             >
               {/* 画像 */}
-              <div className="flex-shrink-0 w-20 h-28 bg-gray-100">
+              <div className="flex-shrink-0 w-20 h-20 bg-gray-100">
                 {card.imageUrl ? (
                   <Image
                     src={card.imageUrl}
                     alt={cardName}
                     width={80}
-                    height={112}
+                    height={80}
                     className="w-full h-full object-contain"
                     unoptimized
                   />
@@ -111,9 +111,9 @@ export default function CardGrid({ cards }: Props) {
             <Link
               key={card.id}
               href={`/cards/${card.id}`}
-              className="bg-white border border-gray-300 rounded-xl overflow-hidden hover:shadow-md transition-shadow"
+              className="bg-white border border-gray-300 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
             >
-              <div className="relative aspect-[3/4] bg-gray-100">
+              <div className="relative aspect-square bg-gray-100">
                 {card.imageUrl ? (
                   <Image
                     src={card.imageUrl}
