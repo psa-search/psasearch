@@ -30,12 +30,11 @@ export interface CardWithTrend {
   localizedName: string
   imageUrl: string
   productNumber: string
-  currentPricePsa10: number | null
-  currentPricePsa9: number | null
-  priceDiff: number | null
-  trendPercent: number | null // 1ヶ月の価格変化率
-  chartPsa10: PricePoint[]
-  chartPsa9: PricePoint[]
+  avgPricePsa10: number | null  // 直近3日平均
+  avgPricePsa9: number | null   // 直近3日平均
+  priceDiff: number | null      // 平均差額
+  salesCount3dPsa10: number
+  salesCount3dPsa9: number
 }
 
 export interface PsaGradeSummary {
@@ -58,6 +57,7 @@ export interface SalesRecord {
   price: number
   date: string
   condition: string
+  hoursAgo: number
 }
 
 export interface SearchResult {

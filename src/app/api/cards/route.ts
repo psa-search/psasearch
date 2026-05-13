@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { searchCards, getPriceChart, calcTrend, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
-import type { CardWithTrend } from '@/types'
+import { searchCards, getSalesHistory, countSalesWithinDays, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import type { CardWithTrend, SalesRecord } from '@/types'
+
+function avgPrice(records: SalesRecord[], days: number): number | null {
+  const recent = records.filter((r) => r.hoursAgo <= days * 24)
+  if (recent.length === 0) return null
+  return Math.round(recent.reduce((s, r) => s + r.price, 0) / recent.length)
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -10,19 +16,17 @@ export async function GET(req: NextRequest) {
   try {
     const listings = await searchCards(brand, page)
 
-    // 各カードのチャートデータを取得して趋勢計算
     const cards: CardWithTrend[] = await Promise.all(
       listings.slice(0, 20).map(async (listing) => {
-        const [chartPsa10, chartPsa9] = await Promise.all([
-          getPriceChart(listing.apparelId, CONDITION_PSA10, 'oneMonth'),
-          getPriceChart(listing.apparelId, CONDITION_PSA9, 'oneMonth'),
+        const [historyPsa10, historyPsa9] = await Promise.all([
+          getSalesHistory(listing.apparelId, CONDITION_PSA10),
+          getSalesHistory(listing.apparelId, CONDITION_PSA9),
         ])
 
-        const latestPsa10 = chartPsa10.points.at(-1)?.price ?? null
-        const latestPsa9 = chartPsa9.points.at(-1)?.price ?? null
+        const avgPricePsa10 = avgPrice(historyPsa10, 3)
+        const avgPricePsa9 = avgPrice(historyPsa9, 3)
         const priceDiff =
-          latestPsa10 !== null && latestPsa9 !== null ? latestPsa10 - latestPsa9 : null
-        const trendPercent = calcTrend(chartPsa10.points)
+          avgPricePsa10 !== null && avgPricePsa9 !== null ? avgPricePsa10 - avgPricePsa9 : null
 
         return {
           id: listing.apparelId,
@@ -30,23 +34,16 @@ export async function GET(req: NextRequest) {
           localizedName: listing.localizedName,
           imageUrl: listing.imageUrl,
           productNumber: listing.productNumber,
-          currentPricePsa10: latestPsa10,
-          currentPricePsa9: latestPsa9,
+          avgPricePsa10,
+          avgPricePsa9,
           priceDiff,
-          trendPercent,
-          chartPsa10: chartPsa10.points,
-          chartPsa9: chartPsa9.points,
+          salesCount3dPsa10: countSalesWithinDays(historyPsa10, 3),
+          salesCount3dPsa9: countSalesWithinDays(historyPsa9, 3),
         }
       })
     )
 
-    // 価格上昇率でソート（上昇中を上に）
-    cards.sort((a, b) => {
-      if (a.trendPercent === null && b.trendPercent === null) return 0
-      if (a.trendPercent === null) return 1
-      if (b.trendPercent === null) return -1
-      return b.trendPercent - a.trendPercent
-    })
+    cards.sort((a, b) => b.salesCount3dPsa10 - a.salesCount3dPsa10)
 
     return NextResponse.json({ cards, brand, page })
   } catch (err) {

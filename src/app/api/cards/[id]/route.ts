@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPriceChart, getSalesHistory, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import { getPriceChart, getSalesHistory, countSalesWithinDays, getCardInfo, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import { matchSnidanToPsa, getPsaMetrics } from '@/lib/psa-sync'
+import { getDollarRate } from '@/lib/exchange-rate'
 import type { PricePoint } from '@/types'
 
 /** allデータから直近N日分を切り出す */
@@ -22,13 +24,25 @@ export async function GET(
   }
 
   try {
-    const [chartPsa10All, chartPsa9All, chartPsa10Month, chartPsa9Month, salesHistory] = await Promise.all([
+    const [chartPsa10All, chartPsa9All, chartPsa10Month, chartPsa9Month, salesHistoryPsa10, salesHistoryPsa9, cardInfo, usdJpyRate] = await Promise.all([
       getPriceChart(apparelId, CONDITION_PSA10, 'all'),
       getPriceChart(apparelId, CONDITION_PSA9, 'all'),
       getPriceChart(apparelId, CONDITION_PSA10, 'oneMonth'),
       getPriceChart(apparelId, CONDITION_PSA9, 'oneMonth'),
-      getSalesHistory(apparelId),
+      getSalesHistory(apparelId, CONDITION_PSA10),
+      getSalesHistory(apparelId, CONDITION_PSA9),
+      getCardInfo(apparelId),
+      getDollarRate(),
     ])
+
+    // Fetch PSA metrics (auto-match + cache)
+    let psaMetrics = null
+    if (cardInfo.name) {
+      const specId = await matchSnidanToPsa(apparelId, cardInfo.name)
+      if (specId) {
+        psaMetrics = await getPsaMetrics(specId)
+      }
+    }
 
     // 全期間データが3ヶ月以上あれば直近90日を切り出す
     const psa10ThreeMonths = filterLastDays(chartPsa10All.points, 90)
@@ -36,6 +50,8 @@ export async function GET(
 
     return NextResponse.json({
       apparelId,
+      cardName: cardInfo.name,
+      cardImageUrl: cardInfo.imageUrl,
       chartPsa10All: chartPsa10All.points,
       chartPsa9All: chartPsa9All.points,
       chartPsa10Month: chartPsa10Month.points,
@@ -43,7 +59,12 @@ export async function GET(
       chartPsa10ThreeMonths: psa10ThreeMonths,
       chartPsa9ThreeMonths: psa9ThreeMonths,
       hasThreeMonths: psa10ThreeMonths.length > 0 && chartPsa10All.points.length > psa10ThreeMonths.length,
-      salesHistory,
+      salesHistoryPsa10,
+      salesHistoryPsa9,
+      salesCount3dPsa10: countSalesWithinDays(salesHistoryPsa10, 3),
+      salesCount3dPsa9: countSalesWithinDays(salesHistoryPsa9, 3),
+      psaMetrics,
+      usdJpyRate,
     })
   } catch (err) {
     console.error(err)
