@@ -1,6 +1,13 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
 import CardGrid from '@/components/CardGrid'
 import { searchCards, getSalesHistory, countSalesWithinDays, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
 import type { CardWithTrend, SalesRecord } from '@/types'
+
+async function refreshData() {
+  revalidatePath('/')
+}
 
 interface Props {
   searchParams: Promise<{ brand?: string; page?: string; search?: string }>
@@ -109,8 +116,18 @@ export default async function Home({ searchParams }: Props) {
           </form>
 
         {/* 最終更新日 */}
-        <div className="text-xs text-gray-500 mb-4">
-          最終更新: {new Date().toLocaleString('ja-JP')}
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-gray-500">
+            最終更新: {new Date().toLocaleString('ja-JP')}
+          </span>
+          <form action={refreshData}>
+            <button
+              type="submit"
+              className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+            >
+              更新
+            </button>
+          </form>
         </div>
 
         {/* ブランド切り替え */}
