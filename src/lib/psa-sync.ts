@@ -38,6 +38,8 @@ export async function matchSnidanToPsa(
   snidanApparelId: number,
   snidanName: string
 ): Promise<string | null> {
+  if (!supabase) return null
+
   // 既存マッピングを確認
   const { data: existing } = await supabase
     .from('snidan_psa_mapping')
@@ -208,6 +210,10 @@ async function fetchPsaMetricsFromApi(specId: string): Promise<PsaGradeMetrics |
  * PSA metrics を取得（キャッシュから、なければ fetch）
  */
 export async function getPsaMetrics(specId: string): Promise<PsaGradeMetrics | null> {
+  if (!supabase) {
+    return fetchPsaMetricsFromApi(specId)
+  }
+
   // キャッシュを確認
   const { data: cached, error } = await supabase
     .from('psa_grade_metrics')
