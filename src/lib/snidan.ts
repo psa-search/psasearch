@@ -139,6 +139,8 @@ export async function getPriceChart(
   // DB キャッシュから取得を試みる
   try {
     const { supabase } = await import('./supabase')
+    if (!supabase) throw new Error('Supabase not available')
+
     const { data: cached } = await supabase
       .from('snidan_price_charts')
       .select('points, range_keys, created_at')
@@ -243,6 +245,8 @@ export async function getSalesHistory(apparelId: number, conditionId: number): P
   // DB キャッシュから取得を試みる
   try {
     const { supabase } = await import('./supabase')
+    if (!supabase) throw new Error('Supabase not available')
+
     const { data: cached } = await supabase
       .from('snidan_sales_history')
       .select('records, created_at')
