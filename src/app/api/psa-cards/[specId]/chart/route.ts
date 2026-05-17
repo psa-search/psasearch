@@ -50,8 +50,8 @@ export async function GET(
     const cutoffDate = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000)
       .toISOString()
       .split('T')[0]
-    const psaData10Filtered = psaData10.filter(p => p.date >= cutoffDate)
-    const psaData9Filtered = psaData9.filter(p => p.date >= cutoffDate)
+    const psaData10Filtered = psaData10.filter((p: any) => p.date >= cutoffDate)
+    const psaData9Filtered = psaData9.filter((p: any) => p.date >= cutoffDate)
 
     // 日付をキーにしてマージ
     const dateMap = new Map<
