@@ -60,8 +60,11 @@ export async function GET(request: Request) {
     }
 
     if (!response.ok) {
+      const errorMessage = data.message?.includes('Certificate Number Not Found')
+        ? '鑑定番号が見つかりません'
+        : data.message || 'Failed to fetch from PSA API'
       return Response.json(
-        { error: data.message || 'Failed to fetch from PSA API' },
+        { error: errorMessage },
         { status: response.status }
       )
     }
@@ -70,8 +73,7 @@ export async function GET(request: Request) {
     await incrementTokenCount(token)
 
     // データから spec ID を抽出
-    // PSA API のレスポンス形式に応じて調整
-    const specId = data.specs?.[0]?.specId || data.specId
+    const specId = data.PSACert?.SpecID || data.specs?.[0]?.specId || data.specId
 
     if (!specId) {
       return Response.json(

@@ -93,6 +93,8 @@ export default function CardsListPage() {
   const [certNumberInput, setCertNumberInput] = useState('')
   const [certNumberLoading, setCertNumberLoading] = useState(false)
   const [certNumberError, setCertNumberError] = useState<string | null>(null)
+  const [snidanImageLoading, setSnidanImageLoading] = useState(false)
+  const [snidanImageError, setSnidanImageError] = useState<string | null>(null)
 
   const searchByCertNumber = async () => {
     if (!certNumberInput.trim()) {
@@ -113,15 +115,12 @@ export default function CardsListPage() {
 
       // spec ID を検索ワードに設定
       const specId = data.specId
-      setSearch(specId.toString())
-      setCurrentPage(1)
       setShowCertNumberModal(false)
       setCertNumberInput('')
+      setCurrentPage(1)
 
-      // 自動検索を実行
-      setTimeout(() => {
-        fetchCards(1)
-      }, 0)
+      // 自動検索を実行（spec ID を直接渡す）
+      await fetchCards(1, [specId.toString()])
     } catch (error) {
       setCertNumberError((error as Error).message || '検索エラー')
     } finally {
@@ -129,20 +128,20 @@ export default function CardsListPage() {
     }
   }
 
-  const fetchCards = async (page: number) => {
+  const fetchCards = async (page: number, searchTerms?: string[]) => {
     setLoading(true)
     try {
       // 複合検索: "SV6 064" を分割して検索
-      const searchTerms = search.trim().split(/\s+/).filter(t => t.length > 0)
+      const terms = searchTerms || search.trim().split(/\s+/).filter(t => t.length > 0)
 
       // API からデータを取得
       let params: URLSearchParams
-      if (searchTerms.length === 0) {
+      if (terms.length === 0) {
         params = new URLSearchParams({ sortBy, order, limit })
       } else {
         params = new URLSearchParams({ sortBy, order, limit })
         // 複数キーワードをすべて送る
-        searchTerms.forEach(term => {
+        terms.forEach(term => {
           params.append('search', term)
         })
       }
@@ -398,6 +397,38 @@ export default function CardsListPage() {
       alert('エラー: スニダンリンクの削除に失敗しました')
     } finally {
       setSnidanModalLoading(false)
+    }
+  }
+
+  const fetchSnidanImageForSelectedCard = async () => {
+    if (!selectedCard || !selectedCard.snidan_apparel_id) {
+      setSnidanImageError('スニダンIDが登録されていません')
+      return
+    }
+
+    setSnidanImageLoading(true)
+    setSnidanImageError(null)
+
+    try {
+      const response = await fetch('/api/snidan-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apparelIds: [selectedCard.snidan_apparel_id] }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '画像取得に失敗しました')
+      }
+
+      // Refresh card detail to show updated images
+      await fetchCardDetail(selectedCard.psa_spec_id)
+      setSnidanImageError(null)
+    } catch (error) {
+      setSnidanImageError(error instanceof Error ? error.message : '画像取得に失敗しました')
+    } finally {
+      setSnidanImageLoading(false)
     }
   }
 
@@ -672,7 +703,7 @@ export default function CardsListPage() {
                   <option value="1000">1000件</option>
                 </select>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-2">
                 <button
                   onClick={() => {
                     setCurrentPage(1)
@@ -681,9 +712,16 @@ export default function CardsListPage() {
                     setTimeout(() => fetchCards(1), 0)
                   }}
                   disabled={loading}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors font-medium"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors font-medium"
                 >
                   検索
+                </button>
+                <button
+                  onClick={() => setShowCertNumberModal(true)}
+                  disabled={certNumberLoading}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors font-medium"
+                >
+                  {certNumberLoading ? '検索中...' : '鑑定番号で検索'}
                 </button>
               </div>
             </div>
@@ -732,13 +770,6 @@ export default function CardsListPage() {
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:bg-gray-400 transition-colors"
               >
                 {priceLoading ? '取得中...' : '価格を取得'}
-              </button>
-              <button
-                onClick={() => setShowCertNumberModal(true)}
-                disabled={certNumberLoading}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors"
-              >
-                {certNumberLoading ? '検索中...' : '鑑定番号で検索'}
               </button>
             </div>
           )}
@@ -1396,15 +1427,31 @@ export default function CardsListPage() {
                     )}
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setSnidanUrl('')
-                      setShowSnidanUrlModal(true)
-                    }}
-                    className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                  >
-                    {selectedCard.snidan_apparel_id ? 'スニダンのURLを訂正' : 'スニダンのURLを指定'}
-                  </button>
+                  <div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSnidanUrl('')
+                          setShowSnidanUrlModal(true)
+                        }}
+                        className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                      >
+                        {selectedCard.snidan_apparel_id ? 'スニダンのURLを訂正' : 'スニダンのURLを指定'}
+                      </button>
+                      {selectedCard.snidan_apparel_id && (
+                        <button
+                          onClick={fetchSnidanImageForSelectedCard}
+                          disabled={snidanImageLoading}
+                          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 transition-colors text-sm"
+                        >
+                          {snidanImageLoading ? '取得中...' : 'スニダンから画像を再取得'}
+                        </button>
+                      )}
+                    </div>
+                    {snidanImageError && (
+                      <p className="mt-2 text-sm text-red-600">{snidanImageError}</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
