@@ -1,53 +1,93 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { searchCards, getSalesHistory, countSalesWithinDays, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
-import type { CardWithTrend, SalesRecord } from '@/types'
+import { createClient } from '@supabase/supabase-js'
 
-function avgPrice(records: SalesRecord[], days: number): number | null {
-  const recent = records.filter((r) => r.hoursAgo <= days * 24)
-  if (recent.length === 0) return null
-  return Math.round(recent.reduce((s, r) => s + r.price, 0) / recent.length)
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = req.nextUrl
-  const brand = (searchParams.get('brand') as 'pokemon' | 'onepiece') ?? 'pokemon'
-  const page = parseInt(searchParams.get('page') ?? '1')
-
+export async function GET(request: Request) {
   try {
-    const listings = await searchCards(brand, page)
+    const { searchParams } = new URL(request.url)
+    const searches = searchParams.getAll('search') || []
+    const sortBy = searchParams.get('sortBy') || 'gem_rate_psa10'
+    const order = searchParams.get('order') || 'desc'
+    const limit = parseInt(searchParams.get('limit') || '100', 10)
+    const offset = parseInt(searchParams.get('offset') || '0', 10)
+    const minGem10 = searchParams.get('minGem10') ? parseInt(searchParams.get('minGem10')!) : null
+    const minTotal = searchParams.get('minTotal') ? parseInt(searchParams.get('minTotal')!) : null
 
-    const cards: CardWithTrend[] = await Promise.all(
-      listings.slice(0, 20).map(async (listing) => {
-        const [historyPsa10, historyPsa9] = await Promise.all([
-          getSalesHistory(listing.apparelId, CONDITION_PSA10),
-          getSalesHistory(listing.apparelId, CONDITION_PSA9),
-        ])
+    // Call RPC function for search
+    const { data, error } = await supabase.rpc('search_cards', {
+      p_search_terms: searches.length > 0 ? searches : null,
+      p_sort_by: sortBy,
+      p_order: order,
+      p_limit: limit,
+      p_offset: offset,
+      p_min_gem10: minGem10,
+      p_min_total: minTotal
+    })
 
-        const avgPricePsa10 = avgPrice(historyPsa10, 3)
-        const avgPricePsa9 = avgPrice(historyPsa9, 3)
-        const priceDiff =
-          avgPricePsa10 !== null && avgPricePsa9 !== null ? avgPricePsa10 - avgPricePsa9 : null
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 })
+    }
 
-        return {
-          id: listing.apparelId,
-          name: listing.name,
-          localizedName: listing.localizedName,
-          imageUrl: listing.imageUrl,
-          productNumber: listing.productNumber,
-          avgPricePsa10,
-          avgPricePsa9,
-          priceDiff,
-          salesCount3dPsa10: countSalesWithinDays(historyPsa10, 3),
-          salesCount3dPsa9: countSalesWithinDays(historyPsa9, 3),
-        }
+    if (!data) {
+      return Response.json({
+        cards: [],
+        total: 0
       })
-    )
+    }
 
-    cards.sort((a, b) => b.salesCount3dPsa10 - a.salesCount3dPsa10)
+    // data is JSON object with cards and total
+    const result = typeof data === 'string' ? JSON.parse(data) : data
 
-    return NextResponse.json({ cards, brand, page })
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'Failed to fetch cards' }, { status: 500 })
+    // Convert USD to JPY for display
+    const { getDollarRate } = await import('@/lib/exchange-rate')
+    const rate = await getDollarRate()
+
+    const cards = (result.cards || []).map((row: any) => {
+      const psa10Jpy = row.psa_psa10_avg_price_3d ? Math.round(row.psa_psa10_avg_price_3d * rate) : null
+      const psa9Jpy = row.psa_psa9_avg_price_3d ? Math.round(row.psa_psa9_avg_price_3d * rate) : null
+
+      // PSA10/PSA9 price ratio
+      let priceDiffRatio: number | null = null
+      if (psa10Jpy && psa9Jpy && psa9Jpy > 0) {
+        priceDiffRatio = Math.round((psa10Jpy / psa9Jpy) * 100)
+      }
+
+      return {
+        psa_spec_id: row.psa_spec_id,
+        set_id: row.set_id,
+        card_number: row.card_number,
+        card_name: row.card_name,
+        card_name_ja: row.card_name_ja,
+        variety: row.variety,
+        total_graded: row.total_graded,
+        gem_count_psa10: row.gem_count_psa10,
+        gem_rate_psa10: row.gem_rate_psa10,
+        image_urls: row.image_urls,
+        psa_psa10_avg_price_3d: psa10Jpy,
+        psa_psa10_qty_3d: row.psa_psa10_qty_3d,
+        psa_psa9_avg_price_3d: psa9Jpy,
+        psa_psa9_qty_3d: row.psa_psa9_qty_3d,
+        priceDiffRatio,
+        snidan_apparel_id: row.snidan_apparel_id,
+        snidan_psa10_avg_price_3d: row.snidan_psa10_avg_price_3d,
+        snidan_psa10_qty_3d: row.snidan_psa10_qty_3d,
+        snidan_psa9_avg_price_3d: row.snidan_psa9_avg_price_3d,
+        snidan_psa9_qty_3d: row.snidan_psa9_qty_3d,
+        snidan_code: row.snidan_code,
+        set: {
+          set_code: row.set_code
+        }
+      }
+    })
+
+    return Response.json({
+      cards,
+      total: result.total || 0
+    })
+  } catch (error) {
+    return Response.json({ error: (error as Error).message }, { status: 500 })
   }
 }

@@ -58,6 +58,7 @@ export interface SalesRecord {
   date: string
   condition: string
   hoursAgo: number
+  soldAt: string
 }
 
 export interface SearchResult {

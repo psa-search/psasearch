@@ -24,47 +24,75 @@ const TTL_SALES_HISTORY = 300 // 販売履歴: 5分
  */
 async function _searchCards(brand: 'pokemon' | 'onepiece', page: number, keyword?: string): Promise<SearchResult[]> {
   const categoryIds = brand === 'pokemon' ? '6%2F33' : '6'
-  let url = `${BASE}/search?searchCategoryIds=${categoryIds}&brandIds=${brand}&sort=hottest&itemSizes=quantity_1&isSaleOnly=true&page=${page}`
-
-  if (keyword) {
-    url += `&searchText=${encodeURIComponent(keyword)}`
-  }
-
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Snidan search failed: ${res.status}`)
-
-  const html = await res.text()
-  const $ = cheerio.load(html)
-
   const results: SearchResult[] = []
+  const seenApparelIds = new Set<number>()
 
-  $('a[href*="/apparels/"]').each((_, el) => {
-    const href = $(el).attr('href') || ''
-    const match = href.match(/\/apparels\/(\d+)/)
-    if (!match) return
+  // キーワード検索の場合は1ページ目のカードから複数ページを読み込む
+  // キーワード非検索の場合は指定ページのみ
+  const isCategoricalSearch = !keyword
+  let targetApparelId: number | null = null
+  const pagesToSearch = keyword ? 10 : 1
 
-    const apparelId = parseInt(match[1])
-    const listingId = 0
+  for (let p = isCategoricalSearch ? page : 1; p < (isCategoricalSearch ? page + 1 : 1 + pagesToSearch); p++) {
+    let url = `${BASE}/search?searchCategoryIds=${categoryIds}&brandIds=${brand}&sort=price_high&itemSizes=quantity_1&isSaleOnly=true&page=${p}`
 
-    if (results.find((r) => r.apparelId === apparelId)) return
+    if (keyword) {
+      url += `&keywords=${encodeURIComponent(keyword)}`
+    }
 
-    const imgEl = $(el).find('img').first()
-    const imageUrl = imgEl.attr('src') || imgEl.attr('data-src') || ''
-    const name = imgEl.attr('alt') || ''
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Snidan search failed: ${res.status}`)
 
-    const priceText = $(el).find('[class*="price"], [class*="Price"]').first().text()
-    const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0
+    const html = await res.text()
+    const $ = cheerio.load(html)
 
-    results.push({
-      apparelId,
-      listingId,
-      name,
-      localizedName: name,
-      imageUrl,
-      productNumber: '',
-      price,
+    let pageHasResults = false
+
+    $('a[class*="productTile"]').each((_, el) => {
+      const href = $(el).attr('href') || ''
+
+      // 出品URLを除外（/used/ が含まれている）
+      if (href.includes('/used/')) return
+
+      const match = href.match(/\/apparels\/(\d+)(?:\/)?$/)
+      if (!match) return
+
+      const apparelId = parseInt(match[1])
+
+      // キーワード検索の場合、最初のカード（apparelId）に限定
+      if (keyword) {
+        if (targetApparelId === null) {
+          targetApparelId = apparelId
+        } else if (apparelId !== targetApparelId) {
+          return
+        }
+      }
+
+      if (seenApparelIds.has(apparelId)) return
+
+      seenApparelIds.add(apparelId)
+      pageHasResults = true
+
+      const imgEl = $(el).find('img').first()
+      const imageUrl = imgEl.attr('src') || imgEl.attr('data-src') || ''
+      const name = imgEl.attr('alt') || ''
+
+      const priceText = $(el).find('[class*="price"], [class*="Price"]').first().text()
+      const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0
+
+      results.push({
+        apparelId,
+        listingId: 0,
+        name,
+        localizedName: name,
+        imageUrl,
+        productNumber: '',
+        price,
+      })
     })
-  })
+
+    if (!pageHasResults && keyword) break
+  }
 
   return results
 }
@@ -78,7 +106,7 @@ export async function searchCards(brand: 'pokemon' | 'onepiece', page: number, k
   // キーワードなしの場合はキャッシュを使う
   const cachedSearch = unstable_cache(
     _searchCards,
-    ['snidan-search'],
+    ['snidan-search', brand, page.toString()],
     { revalidate: TTL_SEARCH }
   )
   return cachedSearch(brand, page)
@@ -191,6 +219,55 @@ export async function getPriceChart(
 
 const THREE_DAYS_HOURS = 72
 
+function formatDateTime(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`
+}
+
+function parseSoldAt(dateStr: string): string {
+  const now = new Date()
+
+  const minMatch = dateStr.match(/(\d+)分前/)
+  if (minMatch) {
+    const minutes = parseInt(minMatch[1])
+    const date = new Date(now.getTime() - minutes * 60 * 1000)
+    return formatDateTime(date)
+  }
+
+  const hourMatch = dateStr.match(/(\d+)時間前/)
+  if (hourMatch) {
+    const hours = parseInt(hourMatch[1])
+    const date = new Date(now.getTime() - hours * 60 * 60 * 1000)
+    return formatDateTime(date)
+  }
+
+  if (dateStr === '昨日') {
+    const date = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    date.setHours(12, 0, 0, 0)
+    return formatDateTime(date)
+  }
+
+  const dayMatch = dateStr.match(/(\d+)日前/)
+  if (dayMatch) {
+    const days = parseInt(dayMatch[1])
+    const date = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+    return formatDateTime(date)
+  }
+
+  // "2026/05/06" 形式の絶対日付
+  const absMatch = dateStr.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (absMatch) {
+    return dateStr + ' 00:00:00'
+  }
+
+  return formatDateTime(now)
+}
+
 function parseHoursAgo(dateStr: string): number {
   const minMatch = dateStr.match(/(\d+)分前/)
   if (minMatch) return parseInt(minMatch[1]) / 60
@@ -223,6 +300,7 @@ async function fetchSalesPage(apparelId: number, conditionId: number, page: numb
     date: h.date,
     condition: h.condition,
     hoursAgo: parseHoursAgo(h.date),
+    soldAt: parseSoldAt(h.date),
   }))
 }
 

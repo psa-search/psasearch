@@ -61,6 +61,7 @@ export async function getPsaSalesHistory(specId: string, grade = 10, pageSize = 
       saleDate: string
       salePrice: number
       gradeValue: number
+      saleType: string
       listingURL: string
     }>
     metrics: { growthRate: number; totalCount: number; averagePrice: number } | null
@@ -81,11 +82,13 @@ export async function getPsaSalesHistory(specId: string, grade = 10, pageSize = 
           saleDate: string
           salePrice: number
           gradeValue: number
+          saleType: string
           listingURL: string
         }) => ({
           saleDate: s.saleDate,
           salePrice: s.salePrice,
           gradeValue: s.gradeValue,
+          saleType: s.saleType,
           listingURL: s.listingURL,
         })
       ),
@@ -102,5 +105,42 @@ export async function getPsaSalesHistory(specId: string, grade = 10, pageSize = 
     return result
   } catch {
     return { sales: [], metrics: null }
+  }
+}
+
+export async function getPsaTimeSeries(specId: string, grade: 10 | 9) {
+  const cacheKey = `psa:timeseries:${specId}:${grade}`
+  const cached = getCached<
+    Array<{
+      date: string
+      averagePrice: number | null
+    }>
+  >(cacheKey)
+  if (cached) return cached
+
+  const url = `${BASE}/spec/${specId}/psa/priceSummary?g=${grade}&tr=6&salesSummaryType=TIMESERIES&q=false&gt=SINGLE_GRADED`
+
+  try {
+    const res = await fetch(url, { next: { revalidate: 3600 } })
+    if (!res.ok) throw new Error(`PSA timeseries API failed: ${res.status}`)
+
+    const data = await res.json()
+
+    const result = (data.salesSummary || []).map(
+      (s: {
+        date: string
+        metrics: {
+          averagePrice: number
+        }
+      }) => ({
+        date: s.date,
+        averagePrice: s.metrics.averagePrice > 0 ? s.metrics.averagePrice : null,
+      })
+    )
+
+    setCached(cacheKey, result)
+    return result
+  } catch {
+    return []
   }
 }

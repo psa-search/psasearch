@@ -1,11 +1,10 @@
-'use server'
-
 import { revalidatePath } from 'next/cache'
 import CardGrid from '@/components/CardGrid'
 import { searchCards, getSalesHistory, countSalesWithinDays, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
 import type { CardWithTrend, SalesRecord } from '@/types'
 
 async function refreshData() {
+  'use server'
   revalidatePath('/')
 }
 
