@@ -89,6 +89,45 @@ export default function CardsListPage() {
   const [snidanSalesHistory, setSnidanSalesHistory] = useState<Array<{ soldAt?: string; priceJpy: number }>>([])
   const [salesGrade, setSalesGrade] = useState<10 | 9>(10)
   const [salesLoading, setSalesLoading] = useState(false)
+  const [showCertNumberModal, setShowCertNumberModal] = useState(false)
+  const [certNumberInput, setCertNumberInput] = useState('')
+  const [certNumberLoading, setCertNumberLoading] = useState(false)
+  const [certNumberError, setCertNumberError] = useState<string | null>(null)
+
+  const searchByCertNumber = async () => {
+    if (!certNumberInput.trim()) {
+      setCertNumberError('鑑定番号を入力してください')
+      return
+    }
+
+    setCertNumberLoading(true)
+    setCertNumberError(null)
+    try {
+      const response = await fetch(`/api/search-by-cert-number?certNumber=${encodeURIComponent(certNumberInput)}`)
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        setCertNumberError(data.error || '検索に失敗しました')
+        return
+      }
+
+      // spec ID を検索ワードに設定
+      const specId = data.specId
+      setSearch(specId.toString())
+      setCurrentPage(1)
+      setShowCertNumberModal(false)
+      setCertNumberInput('')
+
+      // 自動検索を実行
+      setTimeout(() => {
+        fetchCards(1)
+      }, 0)
+    } catch (error) {
+      setCertNumberError((error as Error).message || '検索エラー')
+    } finally {
+      setCertNumberLoading(false)
+    }
+  }
 
   const fetchCards = async (page: number) => {
     setLoading(true)
@@ -694,6 +733,13 @@ export default function CardsListPage() {
               >
                 {priceLoading ? '取得中...' : '価格を取得'}
               </button>
+              <button
+                onClick={() => setShowCertNumberModal(true)}
+                disabled={certNumberLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors"
+              >
+                {certNumberLoading ? '検索中...' : '鑑定番号で検索'}
+              </button>
             </div>
           )}
 
@@ -934,6 +980,64 @@ export default function CardsListPage() {
                   {snidanModalLoading ? '削除中...' : 'リンク解除'}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 鑑定番号検索モーダル */}
+      {showCertNumberModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">鑑定番号で検索</h3>
+
+            {certNumberError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {certNumberError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                PSA 鑑定番号
+              </label>
+              <input
+                type="text"
+                placeholder="例: 137506896"
+                value={certNumberInput}
+                onChange={(e) => setCertNumberInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    searchByCertNumber()
+                  }
+                }}
+                disabled={certNumberLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                PSA Card API から spec ID を取得します
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCertNumberModal(false)
+                  setCertNumberInput('')
+                  setCertNumberError(null)
+                }}
+                disabled={certNumberLoading}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 disabled:bg-gray-300 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={searchByCertNumber}
+                disabled={certNumberLoading || !certNumberInput.trim()}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors"
+              >
+                {certNumberLoading ? '検索中...' : '検索'}
+              </button>
             </div>
           </div>
         </div>
