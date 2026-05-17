@@ -11,6 +11,8 @@ export interface PsaApiToken {
   call_count: number
   reset_date: string
   is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export async function rotateTokenCountsIfNeeded(): Promise<void> {
