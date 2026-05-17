@@ -39,7 +39,7 @@ export async function GET(
       const records = await getSalesHistory(parseInt(snidanId), conditionId)
       console.log('[Sales API] Snidan records:', records.length)
 
-      const sales = records.map(record => ({
+      const sales = records.map((record: any) => ({
         soldAt: record.soldAt,
         priceJpy: record.price,
         condition: record.condition,
@@ -59,7 +59,7 @@ export async function GET(
     const { getDollarRate } = await import('@/lib/exchange-rate')
     const rate = await getDollarRate()
 
-    const sales = data.sales.map(sale => {
+    const sales = data.sales.map((sale: any) => {
       const label = saleTypeLabel(sale.saleType)
       console.log('[Sales API] saleType:', sale.saleType, '-> label:', label)
       return {

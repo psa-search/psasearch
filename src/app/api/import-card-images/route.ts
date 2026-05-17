@@ -167,7 +167,7 @@ export async function POST(request: Request) {
     for (let i = 0; i < cardsToUpdate.length; i += batchSize) {
       const batch = cardsToUpdate.slice(i, i + batchSize)
 
-      const updatePromises = batch.map(card =>
+      const updatePromises = batch.map((card: any) =>
         supabase
           .from('psa_cards')
           .update({ image_urls: [card.imageUrl] })

@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       .from('psa_sets')
       .select('psa_spec_id, set_code, set_name')
 
-    const setMap = new Map(allSets?.map(s => [s.psa_spec_id, { set_code: s.set_code, set_name: s.set_name }]) || [])
+    const setMap = new Map(allSets?.map((s: any) => [s.psa_spec_id, { set_code: s.set_code, set_name: s.set_name }]) || [])
 
     // Build search text and update in batches
     const batchSize = 100
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     for (let i = 0; i < allCards.length; i += batchSize) {
       const batch = allCards.slice(i, i + batchSize)
 
-      const updatePromises = batch.map(card => {
+      const updatePromises = batch.map((card: any) => {
         const setInfo = setMap.get(card.set_id)
         const searchParts = [
           setInfo?.set_code || '',
