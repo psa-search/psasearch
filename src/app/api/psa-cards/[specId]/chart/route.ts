@@ -66,7 +66,7 @@ export async function GET(
     >()
 
     // PSA公式データをマージ（USD → JPY変換）
-    psaData10Filtered.forEach(item => {
+    psaData10Filtered.forEach((item: any) => {
       if (!dateMap.has(item.date)) {
         dateMap.set(item.date, { date: item.date })
       }
@@ -74,7 +74,7 @@ export async function GET(
       entry.psa10Official = item.averagePrice ? Math.round(item.averagePrice * rate) : null
     })
 
-    psaData9Filtered.forEach(item => {
+    psaData9Filtered.forEach((item: any) => {
       if (!dateMap.has(item.date)) {
         dateMap.set(item.date, { date: item.date })
       }
@@ -83,7 +83,7 @@ export async function GET(
     })
 
     // Snidanデータをマージ
-    snidanData10.forEach(item => {
+    snidanData10.forEach((item: any) => {
       const date = new Date(item.timestamp).toISOString().split('T')[0]
       if (!dateMap.has(date)) {
         dateMap.set(date, { date })
@@ -92,7 +92,7 @@ export async function GET(
       entry.psa10Snidan = item.price
     })
 
-    snidanData9.forEach(item => {
+    snidanData9.forEach((item: any) => {
       const date = new Date(item.timestamp).toISOString().split('T')[0]
       if (!dateMap.has(date)) {
         dateMap.set(date, { date })
