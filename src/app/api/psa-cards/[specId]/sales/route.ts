@@ -1,5 +1,5 @@
 import { getPsaSalesHistory } from '@/lib/psa'
-import { getSalesHistory, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import { getSalesHistory, CONDITION_PSA10, CONDITION_PSA9, CONDITION_A } from '@/lib/snidan'
 
 function saleTypeLabel(saleType: string): 'AUC' | 'BO' | 'FIX' | '?' {
   if (!saleType) return '?'
@@ -22,7 +22,7 @@ export async function GET(
     const { specId } = await params
     const { searchParams } = new URL(request.url)
     const source = searchParams.get('source') || 'psa'
-    const grade = parseInt(searchParams.get('g') || '10') as 10 | 9
+    const grade = parseInt(searchParams.get('g') || '10') as 10 | 9 | 18
     const snidanId = searchParams.get('snidanId')
 
     console.log('[Sales API] source:', source, 'grade:', grade, 'snidanId:', snidanId)
@@ -34,7 +34,14 @@ export async function GET(
       }
 
       // Snidan販売履歴
-      const conditionId = grade === 10 ? CONDITION_PSA10 : CONDITION_PSA9
+      let conditionId: number
+      if (grade === 10) {
+        conditionId = CONDITION_PSA10
+      } else if (grade === 9) {
+        conditionId = CONDITION_PSA9
+      } else {
+        conditionId = CONDITION_A
+      }
       console.log('[Sales API] Fetching Snidan sales with conditionId:', conditionId)
       const records = await getSalesHistory(parseInt(snidanId), conditionId)
       console.log('[Sales API] Snidan records:', records.length)
