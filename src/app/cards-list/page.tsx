@@ -75,8 +75,10 @@ export default function CardsListPage() {
   const [modalLoading, setModalLoading] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchProgress, setBatchProgress] = useState(0)
+  const [batchAbortController, setBatchAbortController] = useState<AbortController | null>(null)
   const [priceLoading, setPriceLoading] = useState(false)
   const [priceProgress, setPriceProgress] = useState(0)
+  const [priceAbortController, setPriceAbortController] = useState<AbortController | null>(null)
   const [showSnidanUrlModal, setShowSnidanUrlModal] = useState(false)
   const [snidanUrl, setSnidanUrl] = useState('')
   const [snidanModalLoading, setSnidanModalLoading] = useState(false)
@@ -95,6 +97,25 @@ export default function CardsListPage() {
   const [certNumberError, setCertNumberError] = useState<string | null>(null)
   const [snidanImageLoading, setSnidanImageLoading] = useState(false)
   const [snidanImageError, setSnidanImageError] = useState<string | null>(null)
+  const [psaImageLoading, setPsaImageLoading] = useState(false)
+  const [psaImageError, setPsaImageError] = useState<string | null>(null)
+
+  interface SnidanPopularItem {
+    rank: number
+    snidan_id: string
+    card_name_short: string
+    psa_card: Card | null
+  }
+
+  const [snidanPopularItems, setSnidanPopularItems] = useState<SnidanPopularItem[]>([])
+  const [linkModalTarget, setLinkModalTarget] = useState<{ snidanId: string; cardName: string } | null>(null)
+  const [linkSpecIdInput, setLinkSpecIdInput] = useState('')
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [showSetIdModal, setShowSetIdModal] = useState(false)
+  const [setIdInput, setSetIdInput] = useState('')
+  const [setIdLoading, setSetIdLoading] = useState(false)
+  const [setIdError, setSetIdError] = useState<string | null>(null)
+  const [linkError, setLinkError] = useState<string | null>(null)
 
   const searchByCertNumber = async () => {
     if (!certNumberInput.trim()) {
@@ -131,6 +152,21 @@ export default function CardsListPage() {
   const fetchCards = async (page: number, searchTerms?: string[]) => {
     setLoading(true)
     try {
+      // スニダン人気順の場合
+      if (sortBy === 'snidan_popular') {
+        const params = new URLSearchParams({ limit, offset: ((page - 1) * parseInt(limit)).toString() })
+        const response = await fetch(`/api/snidan/popular?${params}`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch Snidan popular')
+        }
+        const data = await response.json()
+        setSnidanPopularItems(data.items || [])
+        setTotalCount(data.total || 0)
+        setHasSearched(true)
+        setLoading(false)
+        return
+      }
+
       // 複合検索: "SV6 064" を分割して検索
       const terms = searchTerms || search.trim().split(/\s+/).filter(t => t.length > 0)
 
@@ -192,9 +228,27 @@ export default function CardsListPage() {
   // ページ変更時にデータ取得
   useEffect(() => {
     if (hasSearched) {
+      setCurrentPage(1)
+      fetchCards(1)
+    }
+  }, [sortBy, hasSearched]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (hasSearched) {
       fetchCards(currentPage)
     }
-  }, [currentPage, hasSearched]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Esc キーで詳細モーダルを閉じる
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedCard) {
+        setSelectedCard(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedCard])
 
   const toggleSort = (newSortBy: string) => {
     if (sortBy === newSortBy) {
@@ -206,6 +260,34 @@ export default function CardsListPage() {
   }
 
   const fetchCardDetail = async (specId: number) => {
+    // すぐにローディングモーダルを表示
+    setSelectedCard({
+      psa_spec_id: specId,
+      card_name: 'Loading...',
+      card_name_ja: null,
+      card_number: '',
+      variety: null,
+      total_graded: 0,
+      gem_count_psa10: 0,
+      gem_rate_psa10: 0,
+      image_urls: null,
+      psa_psa10_avg_price_3d: null,
+      psa_psa10_qty_3d: null,
+      psa_psa9_avg_price_3d: null,
+      psa_psa9_qty_3d: null,
+      snidan_apparel_id: null,
+      snidan_psa10_avg_price_3d: null,
+      snidan_psa10_qty_3d: null,
+      snidan_psa9_avg_price_3d: null,
+      snidan_psa9_qty_3d: null,
+      snidan_code: null,
+      set: {
+        set_name: 'Loading...',
+        set_code: null,
+        year: 0,
+        psa_spec_id: 0,
+      },
+    } as CardDetail)
     setModalLoading(true)
     try {
       const response = await fetch(`/api/psa-cards/${specId}`)
@@ -432,6 +514,130 @@ export default function CardsListPage() {
     }
   }
 
+  const fetchPsaImageForSelectedCard = async () => {
+    if (!selectedCard) return
+
+    setPsaImageLoading(true)
+    setPsaImageError(null)
+
+    try {
+      const response = await fetch('/api/psa-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specId: selectedCard.psa_spec_id }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '画像取得に失敗しました')
+      }
+
+      // Refresh card detail to show updated images
+      await fetchCardDetail(selectedCard.psa_spec_id)
+      setPsaImageError(null)
+    } catch (error) {
+      setPsaImageError(error instanceof Error ? error.message : '画像取得に失敗しました')
+    } finally {
+      setPsaImageLoading(false)
+    }
+  }
+
+  const handleLinkCard = async () => {
+    if (!linkModalTarget || !linkSpecIdInput.trim()) {
+      setLinkError('Spec ID を入力してください')
+      return
+    }
+
+    setLinkLoading(true)
+    setLinkError(null)
+
+    try {
+      const response = await fetch('/api/snidan/link-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          specId: parseInt(linkSpecIdInput),
+          snidanId: linkModalTarget.snidanId,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '紐づけに失敗しました')
+      }
+
+      // 紐づけ後、データを再取得
+      await fetchCards(currentPage)
+
+      // モーダルを閉じる
+      setLinkModalTarget(null)
+      setLinkSpecIdInput('')
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : '紐づけに失敗しました')
+    } finally {
+      setLinkLoading(false)
+    }
+  }
+
+  const handleUpdateSetId = async () => {
+    if (!selectedCard || !setIdInput.trim()) {
+      setSetIdError('セットコードを入力してください')
+      return
+    }
+
+    setSetIdLoading(true)
+    setSetIdError(null)
+
+    try {
+      const response = await fetch('/api/cards/update-set-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          psa_spec_id: selectedCard.psa_spec_id,
+          set_code: setIdInput,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'セットコードの更新に失敗しました')
+      }
+
+      // Update selected card
+      setSelectedCard(prev => prev ? {
+        ...prev,
+        set: {
+          ...prev.set,
+          set_code: setIdInput,
+        }
+      } : null)
+
+      // Update card in list
+      setCards(prev => prev.map(card =>
+        card.psa_spec_id === selectedCard.psa_spec_id
+          ? {
+              ...card,
+              set: {
+                ...card.set,
+                set_code: setIdInput,
+              }
+            }
+          : card
+      ))
+
+      // モーダルを閉じる
+      setShowSetIdModal(false)
+      setSetIdInput('')
+    } catch (error) {
+      setSetIdError(error instanceof Error ? error.message : 'セットコードの更新に失敗しました')
+    } finally {
+      setSetIdLoading(false)
+    }
+  }
+
   const fetchPriceForSelectedCard = async () => {
     if (!selectedCard) return
 
@@ -490,71 +696,103 @@ export default function CardsListPage() {
   const fetchImagesForAll = async () => {
     if (cards.length === 0) return
 
+    const controller = new AbortController()
+    setBatchAbortController(controller)
     setBatchLoading(true)
     setBatchProgress(0)
 
-    // 現在のページに表示されているカードだけを取得
-    const pageSize = parseInt(limit)
-    const startIdx = (currentPage - 1) * pageSize
-    const endIdx = Math.min(startIdx + pageSize, cards.length)
-    const pageCards = cards.slice(startIdx, endIdx)
+    try {
+      // 現在のページに表示されているカードだけを取得（既に fetchCards でフィルタリングされている）
+      // 画像がないカードだけをフィルタリング
+      const cardsNeedingImages = cards.filter(card => !card.image_urls || card.image_urls.length === 0)
 
-    if (pageCards.length === 0) return
+      if (cardsNeedingImages.length === 0) {
+        console.log('All cards already have images')
+        setBatchLoading(false)
+        setBatchProgress(0)
+        setBatchAbortController(null)
+        return
+      }
 
-    // 並列処理数を制限（一度に5件まで）
-    const batchSize = 5
-    let completed = 0
-    let successCount = 0
+      // 並列処理数を制限（一度に5件まで）
+      const batchSize = 5
+      let completed = 0
+      let successCount = 0
 
-    for (let i = 0; i < pageCards.length; i += batchSize) {
-      const batch = pageCards.slice(i, i + batchSize)
-      const results = await Promise.all(
-        batch.map(async card => {
-          try {
-            const response = await fetch(`/api/psa-cards/${card.psa_spec_id}`)
-            const data = await response.json()
-            console.log(`${card.psa_spec_id}: image_urls =`, data.image_urls)
-            if (data.image_urls && data.image_urls.length > 0) {
-              successCount++
+      for (let i = 0; i < cardsNeedingImages.length; i += batchSize) {
+        if (controller.signal.aborted) {
+          console.log('Image fetch cancelled')
+          break
+        }
+
+        const batch = cardsNeedingImages.slice(i, i + batchSize)
+        const results = await Promise.all(
+          batch.map(async card => {
+            try {
+              const response = await fetch(`/api/psa-cards/${card.psa_spec_id}`, {
+                signal: controller.signal
+              })
+              const data = await response.json()
+              console.log(`${card.psa_spec_id}: image_urls =`, data.image_urls)
+              if (data.image_urls && data.image_urls.length > 0) {
+                successCount++
+              }
+              return data
+            } catch (err: any) {
+              if (err.name === 'AbortError') {
+                console.log('Fetch aborted')
+                return null
+              }
+              console.error(`Failed to fetch ${card.psa_spec_id}:`, err)
+              return null
             }
-            return data
-          } catch (err) {
-            console.error(`Failed to fetch ${card.psa_spec_id}:`, err)
-            return null
-          }
-        })
-      )
-      completed += batch.length
-      setBatchProgress(Math.min(completed, pageCards.length))
+          })
+        )
+        completed += batch.length
+        setBatchProgress(Math.min(completed, cardsNeedingImages.length))
+      }
+
+      console.log(`取得完了: ${successCount}/${cardsNeedingImages.length} 件に画像あり (ページ${currentPage})`)
+
+      // 取得完了後、データをリロード
+      await fetchCards(currentPage)
+    } finally {
+      setBatchLoading(false)
+      setBatchProgress(0)
+      setBatchAbortController(null)
     }
+  }
 
-    console.log(`取得完了: ${successCount}/${pageCards.length} 件に画像あり (ページ${currentPage})`)
-
-    // 取得完了後、データをリロード
-    await fetchCards(currentPage)
-    setBatchLoading(false)
-    setBatchProgress(0)
+  const cancelImageFetch = () => {
+    if (batchAbortController) {
+      batchAbortController.abort()
+      setBatchLoading(false)
+      setBatchProgress(0)
+      setBatchAbortController(null)
+    }
   }
 
   const fetchPricesForAll = async () => {
-    if (cards.length === 0) return
+    console.log('[Price] fetchPricesForAll called, cards.length:', cards.length)
+    if (cards.length === 0) {
+      console.log('[Price] No cards available')
+      setPriceLoading(false)
+      return
+    }
 
     setPriceLoading(true)
     setPriceProgress(0)
 
     // 現在のページに表示されているカードだけを取得
     const pageSize = parseInt(limit)
-    const startIdx = (currentPage - 1) * pageSize
-    const endIdx = Math.min(startIdx + pageSize, cards.length)
-    const pageCards = cards.slice(startIdx, endIdx)
-
-    if (pageCards.length === 0) return
-
+    const pageCards = cards // すべてのカードを処理（既に currentPage でフィルタリングされている）
     const batchSize = 5
     let completed = 0
-    const updatedCardData = new Map<number, any>() // specId -> updated card data
+    const updatedCardData = new Map<number, any>()
 
+    console.log('[Price] Starting fetch for', pageCards.length, 'cards, page:', currentPage, 'limit:', limit)
     for (let i = 0; i < pageCards.length; i += batchSize) {
+      console.log('[Price] Processing batch', Math.floor(i / batchSize) + 1, 'of', Math.ceil(pageCards.length / batchSize))
       const batch = pageCards.slice(i, i + batchSize)
       const specIds = batch.map(card => card.psa_spec_id)
 
@@ -627,6 +865,15 @@ export default function CardsListPage() {
     setPriceProgress(0)
   }
 
+  const cancelPriceFetch = () => {
+    if (priceAbortController) {
+      priceAbortController.abort()
+      setPriceLoading(false)
+      setPriceProgress(0)
+      setPriceAbortController(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-12">
@@ -639,6 +886,7 @@ export default function CardsListPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">検索</label>
                 <input
                   type="text"
+                  inputMode="text"
                   placeholder="セット名、カード番号、またはカード名（例: SV6 064）"
                   value={search}
                   onChange={(e) => {
@@ -659,6 +907,7 @@ export default function CardsListPage() {
                   <option value="gem_rate_psa10">GEM率</option>
                   <option value="total_graded">グレード総数</option>
                   <option value="gem_count_psa10">GEM10枚数</option>
+                  <option value="snidan_popular">スニダン人気順</option>
                 </select>
               </div>
             </div>
@@ -731,7 +980,15 @@ export default function CardsListPage() {
 
           {batchLoading && (
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-blue-900 mb-2">画像取得中...</p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-blue-900">画像取得中...</p>
+                <button
+                  onClick={cancelImageFetch}
+                  className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                >
+                  キャンセル
+                </button>
+              </div>
               <div className="w-full bg-blue-200 rounded-full h-2">
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
@@ -744,7 +1001,15 @@ export default function CardsListPage() {
 
           {priceLoading && (
             <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-amber-900 mb-2">価格データ取得中...</p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-amber-900">価格データ取得中...</p>
+                <button
+                  onClick={cancelPriceFetch}
+                  className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                >
+                  キャンセル
+                </button>
+              </div>
               <div className="w-full bg-amber-200 rounded-full h-2">
                 <div
                   className="bg-amber-600 h-2 rounded-full transition-all duration-300"
@@ -774,7 +1039,143 @@ export default function CardsListPage() {
             </div>
           )}
 
-          {!loading && cards.length > 0 && (
+          {!loading && sortBy === 'snidan_popular' && snidanPopularItems.length > 0 && (
+            <>
+            <div className="overflow-x-auto bg-white rounded-lg shadow-sm">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100 border-b">
+                    <th className="px-4 py-3 text-center font-semibold text-gray-900 w-12">順</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-900 w-20">画像</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-900">セット/No</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-900">カード名</th>
+                    <th colSpan={2} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-blue-50">GEM</th>
+                    <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-green-50">公式価格</th>
+                    <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-orange-50">Snidan価格</th>
+                  </tr>
+                  <tr className="bg-gray-50 border-b">
+                    <th colSpan={4}></th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-l border-gray-300 bg-blue-50">GEM率</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-blue-50">枚数</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-l border-gray-300 bg-green-50">PSA10</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-green-50">PSA9</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-green-50">利益率</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-l border-gray-300 bg-orange-50">PSA10</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">PSA9</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">利益率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snidanPopularItems.map((item, idx) => {
+                    const card = item.psa_card
+                    const psaPriceDiff = card && card.psa_psa10_avg_price_3d && card.psa_psa9_avg_price_3d
+                      ? card.psa_psa10_avg_price_3d - card.psa_psa9_avg_price_3d
+                      : null
+                    const psaPriceDiffPercent = card && card.psa_psa10_avg_price_3d && card.psa_psa9_avg_price_3d && card.psa_psa9_avg_price_3d > 0
+                      ? Math.round((card.psa_psa10_avg_price_3d / card.psa_psa9_avg_price_3d) * 100) - 100
+                      : null
+                    const snidanPriceDiff = card && card.snidan_psa10_avg_price_3d && card.snidan_psa9_avg_price_3d
+                      ? card.snidan_psa10_avg_price_3d - card.snidan_psa9_avg_price_3d
+                      : null
+                    const snidanPriceDiffPercent = card && card.snidan_psa10_avg_price_3d && card.snidan_psa9_avg_price_3d && card.snidan_psa9_avg_price_3d > 0
+                      ? Math.round((card.snidan_psa10_avg_price_3d / card.snidan_psa9_avg_price_3d) * 100) - 100
+                      : null
+
+                    return (
+                      <tr key={item.snidan_id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 text-center font-semibold text-gray-900">{item.rank}</td>
+                        <td className="px-4 py-3">
+                          {card && card.image_urls && card.image_urls.length > 0 ? (
+                            <img
+                              src={card.image_urls[0].startsWith('http')
+                                ? card.image_urls[0]
+                                : `https://d1htnxwo4o0jhw.cloudfront.net/spec/${card.psa_spec_id}/${card.image_urls[0]}.jpg`
+                              }
+                              alt={card.card_name}
+                              className="h-16 w-12 object-cover rounded min-w-12"
+                            />
+                          ) : item.psa_card === null ? (
+                            <button
+                              onClick={() => {
+                                setLinkModalTarget({ snidanId: item.snidan_id, cardName: item.card_name_short })
+                                setLinkSpecIdInput('')
+                                setLinkError(null)
+                              }}
+                              className="text-orange-600 hover:text-orange-800 font-bold text-lg"
+                              title="クリックして PSA Spec ID を入力"
+                            >
+                              ⚠️
+                            </button>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 text-gray-900">
+                          {card ? `${card.set?.set_code || '?'} ${card.card_number}` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {card ? (
+                            <button
+                              onClick={() => fetchCardDetail(card.psa_spec_id)}
+                              className="text-blue-600 hover:text-blue-800 underline text-left"
+                            >
+                              <div className="font-medium">{card.card_name}</div>
+                              {card.card_name_ja && (
+                                <div className="text-sm text-gray-600">{card.card_name_ja}</div>
+                              )}
+                            </button>
+                          ) : (
+                            <a
+                              href={`https://snkrdunk.com/apparels/${item.snidan_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              {item.card_name_short}
+                            </a>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 border-l border-gray-300 bg-blue-50">
+                          <div className={card && card.gem_rate_psa10 >= 50 ? 'font-semibold text-green-600' : ''}>
+                            {card ? `${card.gem_rate_psa10?.toFixed(1) || 0}%` : '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-blue-50">
+                          <div>{card ? card.gem_count_psa10 : '—'}</div>
+                          <div className="text-xs text-gray-500">{card ? card.total_graded : '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right border-l border-gray-300 bg-green-50">
+                          <div className="text-red-600 font-semibold">{card?.psa_psa10_avg_price_3d ? `¥${card.psa_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{card?.psa_psa10_qty_3d || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-green-50">
+                          <div>{card?.psa_psa9_avg_price_3d ? `¥${card.psa_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{card?.psa_psa9_qty_3d || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-green-50">
+                          <div>{psaPriceDiff ? `¥${psaPriceDiff.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{psaPriceDiffPercent !== null ? `${psaPriceDiffPercent}%` : '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right border-l border-gray-300 bg-orange-50">
+                          <div className="font-semibold">{card?.snidan_psa10_avg_price_3d ? `¥${card.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{card?.snidan_psa10_qty_3d || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
+                          <div>{card?.snidan_psa9_avg_price_3d ? `¥${card.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{card?.snidan_psa9_qty_3d || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
+                          <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{snidanPriceDiffPercent !== null ? `${snidanPriceDiffPercent}%` : '—'}</div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            </>
+          )}
+
+          {!loading && sortBy !== 'snidan_popular' && cards.length > 0 && (
             <>
             <div className="overflow-x-auto bg-white rounded-lg shadow-sm">
               <table className="w-full text-sm">
@@ -832,7 +1233,7 @@ export default function CardsListPage() {
                                 : `https://d1htnxwo4o0jhw.cloudfront.net/spec/${card.psa_spec_id}/${card.image_urls[0]}.jpg`
                               }
                               alt={card.card_name}
-                              className="h-16 w-12 object-cover rounded"
+                              className="h-16 w-12 object-cover rounded min-w-12"
                             />
                           ) : (
                             <div className="h-16 w-12 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-400">
@@ -1082,16 +1483,34 @@ export default function CardsListPage() {
               {/* ヘッダー */}
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <p className="text-sm text-gray-500 mb-2">
-                    {selectedCard.set.year}年 {selectedCard.set.set_code && `[${selectedCard.set.set_code}]`}{' '}
-                    {selectedCard.set.set_name}
-                  </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="border-2 border-black px-2 py-0.5 rounded text-sm font-normal text-black bg-white">
+                      {selectedCard.set.year}年
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowSetIdModal(true)
+                        setSetIdInput('')
+                        setSetIdError(null)
+                      }}
+                      className="bg-black text-white font-bold px-2 py-0.5 rounded text-sm hover:bg-gray-800 transition-colors"
+                    >
+                      {selectedCard.set.set_code}
+                    </button>
+                    <p className="text-sm text-gray-500">{selectedCard.set.set_name}</p>
+                  </div>
                   <h2 className="text-2xl font-bold text-gray-900">
                     {selectedCard.card_name}
                     {selectedCard.card_number && <span className="text-gray-600"> #{selectedCard.card_number}</span>}
+                    <span className="text-sm font-normal text-gray-500"> ( SPEC_ID : {selectedCard.psa_spec_id} )</span>
                   </h2>
                   {selectedCard.card_name_ja && (
-                    <p className="text-lg text-gray-600 mt-2">{selectedCard.card_name_ja}</p>
+                    <p className="text-lg text-gray-600 mt-2">
+                      {selectedCard.card_name_ja}
+                      {selectedCard.snidan_code && (
+                        <span className="text-sm text-gray-500 ml-2">[{selectedCard.snidan_code}]</span>
+                      )}
+                    </p>
                   )}
                 </div>
                 <button
@@ -1194,8 +1613,11 @@ export default function CardsListPage() {
                       <ResponsiveContainer width="100%" height={250}>
                       <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                        <YAxis tickFormatter={(v) => v ? `¥${Math.round(v / 10000)}万` : '0'} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(date) => {
+                          const d = new Date(date)
+                          return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+                        }} />
+                        <YAxis tickFormatter={(v) => v ? Math.round(v).toLocaleString() : '0'} tick={{ fontSize: 11 }} />
                         <Tooltip
                           formatter={(value: any) => value ? `¥${Number(value).toLocaleString()}` : '-'}
                           labelFormatter={(label) => `日付: ${label}`}
@@ -1346,20 +1768,20 @@ export default function CardsListPage() {
                             <thead className="sticky top-0 bg-gray-100">
                               <tr>
                                 <th className="text-left px-2 py-1">日付</th>
-                                <th className="text-right px-2 py-1">価格</th>
                                 <th className="text-center px-2 py-1">種別</th>
+                                <th className="text-right px-2 py-1">価格</th>
                               </tr>
                             </thead>
                             <tbody>
                               {psaSalesHistory.map((sale, idx) => (
                                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                   <td className="px-2 py-1">{sale.saleDate?.slice(0, 10)}</td>
-                                  <td className="text-right px-2 py-1 font-semibold">¥{sale.priceJpy.toLocaleString()}</td>
                                   <td className="text-center px-2 py-1">
                                     <span className="inline-block px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
                                       [{sale.saleTypeLabel || '?'}]
                                     </span>
                                   </td>
+                                  <td className="text-right px-2 py-1 font-semibold">¥{sale.priceJpy.toLocaleString()}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1430,6 +1852,13 @@ export default function CardsListPage() {
                   <div>
                     <div className="flex gap-2">
                       <button
+                        onClick={fetchPsaImageForSelectedCard}
+                        disabled={psaImageLoading}
+                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition-colors text-sm"
+                      >
+                        {psaImageLoading ? '取得中...' : 'PSA公式から画像を再取得'}
+                      </button>
+                      <button
                         onClick={() => {
                           setSnidanUrl('')
                           setShowSnidanUrlModal(true)
@@ -1448,12 +1877,130 @@ export default function CardsListPage() {
                         </button>
                       )}
                     </div>
+                    {psaImageError && (
+                      <p className="mt-2 text-sm text-red-600">{psaImageError}</p>
+                    )}
                     {snidanImageError && (
                       <p className="mt-2 text-sm text-red-600">{snidanImageError}</p>
                     )}
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* スニダン紐づけモーダル */}
+      {linkModalTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">PSA Spec ID を入力</h3>
+
+            <p className="text-sm text-gray-600 mb-4">
+              このカードを PSA のどのカードに紐づけるか、Spec ID を入力してください。
+            </p>
+
+            {linkError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {linkError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                PSA Spec ID
+              </label>
+              <input
+                type="number"
+                placeholder="例: 123456789"
+                value={linkSpecIdInput}
+                onChange={(e) => setLinkSpecIdInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleLinkCard()
+                  }
+                }}
+                disabled={linkLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:bg-gray-100"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setLinkModalTarget(null)
+                  setLinkSpecIdInput('')
+                  setLinkError(null)
+                }}
+                disabled={linkLoading}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 disabled:bg-gray-300 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleLinkCard}
+                disabled={linkLoading || !linkSpecIdInput.trim()}
+                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 transition-colors"
+              >
+                {linkLoading ? '紐づけ中...' : '紐づけする'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* セットID編集モーダル */}
+      {showSetIdModal && selectedCard && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">セットコードを編集</h3>
+
+            {setIdError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {setIdError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                セットコード
+              </label>
+              <input
+                type="text"
+                placeholder="例: sv4pt"
+                value={setIdInput}
+                onChange={(e) => setSetIdInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleUpdateSetId()
+                  }
+                }}
+                disabled={setIdLoading}
+                autoFocus
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowSetIdModal(false)
+                  setSetIdInput('')
+                  setSetIdError(null)
+                }}
+                disabled={setIdLoading}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 disabled:bg-gray-300 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleUpdateSetId}
+                disabled={setIdLoading || !setIdInput.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+              >
+                {setIdLoading ? '保存中...' : '保存'}
+              </button>
             </div>
           </div>
         </div>

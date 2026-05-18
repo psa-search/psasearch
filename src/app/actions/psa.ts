@@ -193,16 +193,21 @@ async function scrapeCardImages(specId: number, cookieHeader: string): Promise<s
     const html = await response.text()
     const imageIds: string[] = []
 
-    // CloudFront URL から imageId を抽出
-    const imageRegex = /\/spec\/\d+\/([a-zA-Z0-9_-]+)\.jpg/g
+    // img[itemProp="contentUrl"] から CloudFront URL を抽出して imageId を取得
+    const imageTagRegex = /<img[^>]*itemProp="contentUrl"[^>]*src="([^"]+)"[^>]*>/g
     let match
     const seenIds = new Set<string>()
 
-    while ((match = imageRegex.exec(html)) !== null) {
-      const imageId = match[1]
-      if (!seenIds.has(imageId)) {
-        imageIds.push(imageId)
-        seenIds.add(imageId)
+    while ((match = imageTagRegex.exec(html)) !== null) {
+      const srcUrl = match[1]
+      // CloudFront URL から imageId を抽出
+      const idMatch = srcUrl.match(/\/spec\/\d+\/([a-zA-Z0-9_-]+)\.jpg/)
+      if (idMatch && idMatch[1]) {
+        const imageId = idMatch[1]
+        if (!seenIds.has(imageId)) {
+          imageIds.push(imageId)
+          seenIds.add(imageId)
+        }
       }
     }
 
