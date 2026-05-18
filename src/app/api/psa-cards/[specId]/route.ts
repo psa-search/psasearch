@@ -35,6 +35,8 @@ export async function GET(
         snidan_psa10_qty_3d,
         snidan_psa9_avg_price_3d,
         snidan_psa9_qty_3d,
+        snidan_a_avg_price_3d,
+        snidan_a_qty_3d,
         snidan_code
       `)
       .eq('psa_spec_id', parseInt(specId))
@@ -86,6 +88,8 @@ export async function GET(
       snidan_psa10_qty_3d: card.snidan_psa10_qty_3d,
       snidan_psa9_avg_price_3d: card.snidan_psa9_avg_price_3d,
       snidan_psa9_qty_3d: card.snidan_psa9_qty_3d,
+      snidan_a_avg_price_3d: card.snidan_a_avg_price_3d,
+      snidan_a_qty_3d: card.snidan_a_qty_3d,
       snidan_code: card.snidan_code,
       set: {
         set_name: set.set_name,

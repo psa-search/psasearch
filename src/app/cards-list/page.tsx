@@ -338,6 +338,8 @@ export default function CardsListPage() {
       snidan_psa10_qty_3d: null,
       snidan_psa9_avg_price_3d: null,
       snidan_psa9_qty_3d: null,
+      snidan_a_avg_price_3d: null,
+      snidan_a_qty_3d: null,
       snidan_code: null,
       set: {
         set_name: 'Loading...',
@@ -729,10 +731,16 @@ export default function CardsListPage() {
             ? {
                 ...card,
                 psa_psa10_avg_price_3d: updated.psa_psa10_avg_price_3d,
+                psa_psa10_qty_3d: updated.psa_psa10_qty_3d,
                 psa_psa9_avg_price_3d: updated.psa_psa9_avg_price_3d,
+                psa_psa9_qty_3d: updated.psa_psa9_qty_3d,
                 snidan_apparel_id: updated.snidan_apparel_id,
                 snidan_psa10_avg_price_3d: updated.snidan_psa10_avg_price_3d,
+                snidan_psa10_qty_3d: updated.snidan_psa10_qty_3d,
                 snidan_psa9_avg_price_3d: updated.snidan_psa9_avg_price_3d,
+                snidan_psa9_qty_3d: updated.snidan_psa9_qty_3d,
+                snidan_a_avg_price_3d: updated.snidan_a_avg_price_3d,
+                snidan_a_qty_3d: updated.snidan_a_qty_3d,
               }
             : card
         ))
