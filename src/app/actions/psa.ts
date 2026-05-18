@@ -518,9 +518,10 @@ async function fetchSnidanPrices(apparelId: string, grade: 10 | 9 | 18): Promise
 
     if (recentRecords.length === 0) {
       // 直近10日にデータがない場合、全データから最新を取得
+      // 配列は古い順なので [0] が最新
       console.log(`[fetchSnidanPrices] No recent records in 240 hours, checking all data`)
-      for (let i = records.length - 1; i >= 0; i--) {
-        const record = records[i]
+      if (records.length > 0) {
+        const record = records[0]
         const latestTimestamp = Math.floor(new Date(record.soldAt).getTime() / 1000)
         console.log(`[fetchSnidanPrices] Found latest data: ${record.soldAt} (${latestTimestamp}), price=${record.price}`)
         return {
