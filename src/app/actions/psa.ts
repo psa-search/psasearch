@@ -491,15 +491,25 @@ async function fetchSnidanPrices(apparelId: string, grade: 10 | 9 | 18): Promise
     const conditionId = grade === 10 ? CONDITION_PSA10 : grade === 9 ? CONDITION_PSA9 : CONDITION_A
     console.log(`[fetchSnidanPrices] Fetching for apparelId=${apparelId}, grade=${grade}, conditionId=${conditionId}`)
 
-    // キャッシュをバイパスして常に最新データを取得（価格取得時は最新が必須）
+    // 直接 Snidan API から最新データを取得（キャッシュをバイパス）
+    const { getSalesHistory: getSalesHistoryDirect } = await import('@/lib/snidan')
+
+    // キャッシュテーブルから該当レコードを削除
     const sb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
-    // 古いキャッシュを削除
-    await sb.from('snidan_sales_history').delete().eq('apparel_id', parseInt(apparelId)).eq('condition_id', conditionId)
+    try {
+      await sb.from('snidan_sales_history')
+        .delete()
+        .eq('apparel_id', parseInt(apparelId))
+        .eq('condition_id', conditionId)
+      console.log(`[fetchSnidanPrices] Cache cleared for apparel=${apparelId}, condition=${conditionId}`)
+    } catch (e) {
+      console.log(`[fetchSnidanPrices] Cache clear failed (continuing anyway):`, e)
+    }
 
-    const records = await getSalesHistory(parseInt(apparelId), conditionId)
+    const records = await getSalesHistoryDirect(parseInt(apparelId), conditionId)
     console.log(`[fetchSnidanPrices] Got ${records.length} total records`)
 
     // 直近10日（240時間以内）の成約レコードを抽出
