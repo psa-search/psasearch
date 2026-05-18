@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -25,6 +26,8 @@ interface Card {
   snidan_psa10_qty_3d: number | null
   snidan_psa9_avg_price_3d: number | null
   snidan_psa9_qty_3d: number | null
+  snidan_a_avg_price_3d: number | null
+  snidan_a_qty_3d: number | null
   snidan_code: string | null
   set: {
     set_code: string | null
@@ -50,6 +53,8 @@ interface CardDetail {
   snidan_psa10_qty_3d?: number | null
   snidan_psa9_avg_price_3d: number | null
   snidan_psa9_qty_3d?: number | null
+  snidan_a_avg_price_3d?: number | null
+  snidan_a_qty_3d?: number | null
   snidan_code: string | null
   set: {
     set_name: string
@@ -60,6 +65,9 @@ interface CardDetail {
 }
 
 export default function CardsListPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   const [cards, setCards] = useState<Card[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -71,6 +79,7 @@ export default function CardsListPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [hasSearched, setHasSearched] = useState(false)
+  const [showNoImageOnly, setShowNoImageOnly] = useState(false)
   const [selectedCard, setSelectedCard] = useState<CardDetail | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
@@ -89,7 +98,7 @@ export default function CardsListPage() {
   const [chartPeriod, setChartPeriod] = useState<'1month' | '3months'>('3months')
   const [psaSalesHistory, setPsaSalesHistory] = useState<Array<{ saleDate?: string; priceJpy: number; saleTypeLabel?: string; listingURL?: string | null }>>([])
   const [snidanSalesHistory, setSnidanSalesHistory] = useState<Array<{ soldAt?: string; priceJpy: number }>>([])
-  const [salesGrade, setSalesGrade] = useState<10 | 9>(10)
+  const [salesGrade, setSalesGrade] = useState<10 | 9 | 18>(10)
   const [salesLoading, setSalesLoading] = useState(false)
   const [showCertNumberModal, setShowCertNumberModal] = useState(false)
   const [certNumberInput, setCertNumberInput] = useState('')
@@ -184,6 +193,7 @@ export default function CardsListPage() {
 
       if (minGem10) params.append('minGem10', minGem10)
       if (minTotal) params.append('minTotal', minTotal)
+      if (showNoImageOnly) params.append('noImageOnly', 'true')
 
       // Add offset for pagination
       const offset = (page - 1) * parseInt(limit)
@@ -231,13 +241,61 @@ export default function CardsListPage() {
       setCurrentPage(1)
       fetchCards(1)
     }
-  }, [sortBy, hasSearched]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sortBy]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (hasSearched) {
       fetchCards(currentPage)
     }
   }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // URL からパラメータを読み込む（mount 時）
+  useEffect(() => {
+    const page = searchParams.get('page')
+    const searchVal = searchParams.get('search')
+    const sortVal = searchParams.get('sort')
+    const orderVal = searchParams.get('order')
+    const limitVal = searchParams.get('limit')
+    const minGem10Val = searchParams.get('minGem10')
+    const minTotalVal = searchParams.get('minTotal')
+
+    if (page || searchVal || sortVal || orderVal || limitVal || minGem10Val || minTotalVal) {
+      const pageNum = page ? parseInt(page, 10) : 1
+      setCurrentPage(pageNum)
+      if (searchVal) setSearch(searchVal)
+      if (sortVal) setSortBy(sortVal)
+      if (orderVal) setOrder(orderVal)
+      if (limitVal) setLimit(limitVal)
+      if (minGem10Val) setMinGem10(minGem10Val)
+      if (minTotalVal) setMinTotal(minTotalVal)
+      setHasSearched(true)
+      // URL パラメータから初期化した場合、すぐに fetch を実行
+      fetchCards(pageNum)
+    }
+  }, []) // mount 時のみ
+
+  // 負のタイムスタンプを日付に変換（参考値表示用）
+  const formatQtyWithDate = (qty: number | null | undefined) => {
+    if (!qty) return '—'
+    if (qty < 0) {
+      const date = new Date(-qty * 1000)
+      return `! ${date.toLocaleDateString('ja-JP')}`
+    }
+    return qty
+  }
+
+  // 検索ボタン押下時に URL を更新
+  const updateURL = () => {
+    const params = new URLSearchParams()
+    params.set('page', '1')
+    if (search) params.set('search', search)
+    params.set('sort', sortBy)
+    params.set('order', order)
+    params.set('limit', limit)
+    if (minGem10) params.set('minGem10', minGem10)
+    if (minTotal) params.set('minTotal', minTotal)
+    router.push(`?${params.toString()}`)
+  }
 
   // Esc キーで詳細モーダルを閉じる
   useEffect(() => {
@@ -345,7 +403,7 @@ export default function CardsListPage() {
     }
   }
 
-  const fetchSalesHistory = async (specId: number, source: 'psa' | 'snidan', grade: 10 | 9, snidanId?: string) => {
+  const fetchSalesHistory = async (specId: number, source: 'psa' | 'snidan', grade: 10 | 9 | 18, snidanId?: string) => {
     try {
       const params = new URLSearchParams({ source, g: grade.toString() })
       if (source === 'snidan' && snidanId) {
@@ -703,8 +761,11 @@ export default function CardsListPage() {
 
     try {
       // 現在のページに表示されているカードだけを取得（既に fetchCards でフィルタリングされている）
-      // 画像がないカードだけをフィルタリング
-      const cardsNeedingImages = cards.filter(card => !card.image_urls || card.image_urls.length === 0)
+      // 画像がないカードかつ has_no_image フラグが立っていないカードをフィルタリング
+      const cardsNeedingImages = cards.filter(card =>
+        (!card.image_urls || card.image_urls.length === 0) &&
+        !(card as any).has_no_image
+      )
 
       if (cardsNeedingImages.length === 0) {
         console.log('All cards already have images')
@@ -714,8 +775,8 @@ export default function CardsListPage() {
         return
       }
 
-      // 並列処理数を制限（一度に5件まで）
-      const batchSize = 5
+      // 並列処理数を制限（一度に1件まで）
+      const batchSize = 1
       let completed = 0
       let successCount = 0
 
@@ -956,11 +1017,23 @@ export default function CardsListPage() {
                   <option value="1000">1000件</option>
                 </select>
               </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={showNoImageOnly}
+                    onChange={(e) => setShowNoImageOnly(e.target.checked)}
+                    className="w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-sm font-medium text-gray-700">画像未取得のみ表示</span>
+                </label>
+              </div>
               <div className="flex items-end gap-2">
                 <button
                   onClick={() => {
                     setCurrentPage(1)
                     setHasSearched(true)
+                    updateURL()
                     // 直接フェッチを実行（currentPageが既に1の場合、useEffectが発火しないため）
                     setTimeout(() => fetchCards(1), 0)
                   }}
@@ -1096,6 +1169,7 @@ export default function CardsListPage() {
                                 : `https://d1htnxwo4o0jhw.cloudfront.net/spec/${card.psa_spec_id}/${card.image_urls[0]}.jpg`
                               }
                               alt={card.card_name}
+                              loading="lazy"
                               className="h-16 w-12 object-cover rounded min-w-12"
                             />
                           ) : item.psa_card === null ? (
@@ -1195,7 +1269,7 @@ export default function CardsListPage() {
                     <th className="px-4 py-3 text-left font-semibold text-gray-900">カード名</th>
                     <th colSpan={2} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-blue-50">GEM</th>
                     <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-green-50">公式価格</th>
-                    <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-orange-50">Snidan価格</th>
+                    <th colSpan={4} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-orange-50">Snidan価格</th>
                   </tr>
                   <tr className="bg-gray-50 border-b">
                     <th colSpan={3}></th>
@@ -1206,6 +1280,7 @@ export default function CardsListPage() {
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-green-50">利益率</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-l border-gray-300 bg-orange-50">PSA10</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">PSA9</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">A</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">利益率</th>
                   </tr>
                 </thead>
@@ -1237,6 +1312,7 @@ export default function CardsListPage() {
                                 : `https://d1htnxwo4o0jhw.cloudfront.net/spec/${card.psa_spec_id}/${card.image_urls[0]}.jpg`
                               }
                               alt={card.card_name}
+                              loading="lazy"
                               className="h-16 w-12 object-cover rounded min-w-12"
                             />
                           ) : (
@@ -1293,6 +1369,10 @@ export default function CardsListPage() {
                           <div className="text-xs text-gray-500">{card.snidan_psa9_qty_3d || '—'}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
+                          <div>{card.snidan_a_avg_price_3d ? `¥${card.snidan_a_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{formatQtyWithDate(card.snidan_a_qty_3d)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">
                           <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
                           <div className="text-xs text-gray-500">{snidanPriceDiffPercent !== null ? `${snidanPriceDiffPercent}%` : '—'}</div>
                         </td>
@@ -1317,10 +1397,10 @@ export default function CardsListPage() {
                 <div className="flex gap-1">
                   {Array.from({ length: Math.ceil(totalCount / parseInt(limit)) }).map((_, idx) => {
                     const pageNum = idx + 1
-                    // ページ数が多い場合、前後3ページと最後のページのみ表示
+                    // ページ数が多い場合、前後5ページと最後のページのみ表示
                     const maxPages = Math.ceil(totalCount / parseInt(limit))
-                    if (maxPages <= 7 || pageNum === 1 || pageNum === maxPages ||
-                        (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
+                    if (maxPages <= 13 || pageNum === 1 || pageNum === maxPages ||
+                        (pageNum >= currentPage - 5 && pageNum <= currentPage + 5)) {
                       return (
                         <button
                           key={pageNum}
@@ -1337,7 +1417,7 @@ export default function CardsListPage() {
                           {pageNum}
                         </button>
                       )
-                    } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                    } else if (pageNum === currentPage - 6 || pageNum === currentPage + 6) {
                       return <span key={`dots-${pageNum}`} className="px-1">...</span>
                     }
                     return null
@@ -1640,7 +1720,7 @@ export default function CardsListPage() {
                 {/* 価格データ - テーブルレイアウト */}
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center mb-3">
-                    <p className="text-sm text-gray-500">価格データ（直近3日平均）</p>
+                    <p className="text-sm text-gray-500">価格データ（直近10日平均）</p>
                     <button
                       onClick={fetchPriceForSelectedCard}
                       disabled={modalPriceLoading}
@@ -1675,10 +1755,10 @@ export default function CardsListPage() {
                             {selectedCard.snidan_psa10_avg_price_3d ? `¥${selectedCard.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {selectedCard.psa_psa10_qty_3d || '—'}
+                            {formatQtyWithDate(selectedCard.psa_psa10_qty_3d)}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {selectedCard.snidan_psa10_qty_3d || '—'}
+                            {formatQtyWithDate(selectedCard.snidan_psa10_qty_3d)}
                           </td>
                         </tr>
                         <tr className="border-b hover:bg-gray-50">
@@ -1690,10 +1770,21 @@ export default function CardsListPage() {
                             {selectedCard.snidan_psa9_avg_price_3d ? `¥${selectedCard.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {selectedCard.psa_psa9_qty_3d || '—'}
+                            {formatQtyWithDate(selectedCard.psa_psa9_qty_3d)}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {selectedCard.snidan_psa9_qty_3d || '—'}
+                            {formatQtyWithDate(selectedCard.snidan_psa9_qty_3d)}
+                          </td>
+                        </tr>
+                        <tr className="border-b hover:bg-gray-50">
+                          <td className="px-2 py-2 font-semibold">A</td>
+                          <td className="px-2 py-2 text-right text-gray-400">—</td>
+                          <td className="px-2 py-2 text-right text-gray-900 font-semibold">
+                            {(selectedCard as any).snidan_a_avg_price_3d ? `¥${(selectedCard as any).snidan_a_avg_price_3d.toLocaleString()}` : '—'}
+                          </td>
+                          <td className="px-2 py-2 text-right text-gray-400">—</td>
+                          <td className="px-2 py-2 text-right text-gray-700">
+                            {formatQtyWithDate((selectedCard as any).snidan_a_qty_3d)}
                           </td>
                         </tr>
                         <tr className="bg-gray-50">
@@ -1757,6 +1848,17 @@ export default function CardsListPage() {
                         className={`px-3 py-1 rounded text-sm ${salesGrade === 9 ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
                       >
                         PSA9
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSalesGrade(18)
+                          if (selectedCard.snidan_apparel_id) {
+                            fetchSalesHistory(selectedCard.psa_spec_id, 'snidan', 18, selectedCard.snidan_apparel_id)
+                          }
+                        }}
+                        className={`px-3 py-1 rounded text-sm ${salesGrade === 18 ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        A
                       </button>
                     </div>
                   </div>

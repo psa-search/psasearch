@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const offset = parseInt(searchParams.get('offset') || '0', 10)
     const minGem10 = searchParams.get('minGem10') ? parseInt(searchParams.get('minGem10')!) : null
     const minTotal = searchParams.get('minTotal') ? parseInt(searchParams.get('minTotal')!) : null
+    const noImageOnly = searchParams.get('noImageOnly') === 'true'
 
     // Call RPC function for search
     const { data, error } = await supabase.rpc('search_cards', {
@@ -24,11 +25,13 @@ export async function GET(request: Request) {
       p_limit: limit,
       p_offset: offset,
       p_min_gem10: minGem10,
-      p_min_total: minTotal
+      p_min_total: minTotal,
+      p_no_image_only: noImageOnly
     })
 
     if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
+      console.error('[Cards API] RPC error:', error)
+      return Response.json({ error: error.message, details: JSON.stringify(error) }, { status: 500 })
     }
 
     if (!data) {
@@ -76,6 +79,8 @@ export async function GET(request: Request) {
         snidan_psa10_qty_3d: row.snidan_psa10_qty_3d,
         snidan_psa9_avg_price_3d: row.snidan_psa9_avg_price_3d,
         snidan_psa9_qty_3d: row.snidan_psa9_qty_3d,
+        snidan_a_avg_price_3d: row.snidan_a_avg_price_3d,
+        snidan_a_qty_3d: row.snidan_a_qty_3d,
         snidan_code: row.snidan_code,
         set: {
           set_code: row.set_code

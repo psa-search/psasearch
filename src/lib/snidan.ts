@@ -11,9 +11,10 @@ const HEADERS = {
   'sec-fetch-site': 'same-origin',
 }
 
-// PSA10=22, PSA9=23
+// PSA10=22, PSA9=23, A=18
 export const CONDITION_PSA10 = 22
 export const CONDITION_PSA9 = 23
+export const CONDITION_A = 18
 
 const TTL_SEARCH = 3600      // カード一覧: 1時間
 const TTL_CHART = 86400      // チャート: 1日

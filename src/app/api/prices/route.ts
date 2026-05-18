@@ -29,7 +29,7 @@ export async function POST(request: Request) {
         )
         const { data: card } = await supabase
           .from('psa_cards')
-          .select('psa_psa10_avg_price_3d, psa_psa10_qty_3d, psa_psa9_avg_price_3d, psa_psa9_qty_3d, snidan_apparel_id, snidan_psa10_avg_price_3d, snidan_psa9_avg_price_3d, snidan_code')
+          .select('psa_psa10_avg_price_3d, psa_psa10_qty_3d, psa_psa9_avg_price_3d, psa_psa9_qty_3d, snidan_apparel_id, snidan_psa10_avg_price_3d, snidan_psa9_avg_price_3d, snidan_psa10_qty_3d, snidan_psa9_qty_3d, snidan_a_avg_price_3d, snidan_a_qty_3d, snidan_code')
           .eq('psa_spec_id', specId)
           .single()
 
@@ -53,7 +53,11 @@ export async function POST(request: Request) {
           psa_psa9_qty_3d: card?.psa_psa9_qty_3d || 0,
           snidan_apparel_id: card?.snidan_apparel_id,
           snidan_psa10_avg_price_3d: card?.snidan_psa10_avg_price_3d,
+          snidan_psa10_qty_3d: card?.snidan_psa10_qty_3d || 0,
           snidan_psa9_avg_price_3d: card?.snidan_psa9_avg_price_3d,
+          snidan_psa9_qty_3d: card?.snidan_psa9_qty_3d || 0,
+          snidan_a_avg_price_3d: card?.snidan_a_avg_price_3d,
+          snidan_a_qty_3d: card?.snidan_a_qty_3d || 0,
           snidan_code: card?.snidan_code
         })
       } else {

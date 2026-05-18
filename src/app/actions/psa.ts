@@ -2,7 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
-import { getSalesHistory, CONDITION_PSA10, CONDITION_PSA9 } from '@/lib/snidan'
+import { getSalesHistory, CONDITION_PSA10, CONDITION_PSA9, CONDITION_A } from '@/lib/snidan'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -171,8 +171,9 @@ export async function updateSetCards(specId: number, setName: string) {
 }
 
 // PSA の詳細ページから画像 ID を取得
-async function scrapeCardImages(specId: number, cookieHeader: string): Promise<string[]> {
+async function scrapeCardImages(specId: number, cookieHeader: string): Promise<{ imageIds: string[], error?: string }> {
   try {
+    console.log(`[scrapeCardImages] Starting for specId=${specId}`)
     const response = await fetch(
       `https://www.psacard.com/spec/psa/${specId}?g=10&tr=6&gt=SINGLE_GRADED`,
       {
@@ -184,13 +185,43 @@ async function scrapeCardImages(specId: number, cookieHeader: string): Promise<s
           'x-requested-with': 'XMLHttpRequest',
           'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
           'cookie': cookieHeader,
-        }
+        },
+        redirect: 'manual'
       }
     )
 
-    if (!response.ok) return []
+    console.log(`[scrapeCardImages] Response status for ${specId}: ${response.status}`)
+
+    // 404 またはリダイレクト（notfound など）はカード存在しない
+    if (response.status === 404) {
+      console.log(`[scrapeCardImages] Detected 404 for ${specId}`)
+      return { imageIds: [], error: 'CARD_NOT_FOUND' }
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location') || ''
+      console.log(`[scrapeCardImages] Detected redirect ${response.status} to ${location} for ${specId}`)
+      if (location.includes('notfound') || location.includes('error')) {
+        return { imageIds: [], error: 'CARD_NOT_FOUND' }
+      }
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return { imageIds: [], error: 'COOKIE_EXPIRED' }
+    }
+
+    if (!response.ok) {
+      console.log(`[scrapeCardImages] Response not ok for ${specId}: ${response.status}`)
+      return { imageIds: [], error: 'HTTP_ERROR' }
+    }
 
     const html = await response.text()
+
+    // HTML に notfound メッセージが含まれているか check
+    if (html.includes('notfound') || html.includes('not found') || html.includes('error')) {
+      console.log(`[scrapeCardImages] Detected notfound in HTML for ${specId}`)
+      return { imageIds: [], error: 'CARD_NOT_FOUND' }
+    }
     const imageIds: string[] = []
 
     // img[itemProp="contentUrl"] から CloudFront URL を抽出して imageId を取得
@@ -211,22 +242,57 @@ async function scrapeCardImages(specId: number, cookieHeader: string): Promise<s
       }
     }
 
-    return imageIds
+    if (imageIds.length === 0) {
+      return { imageIds: [], error: 'NO_IMAGE' }
+    }
+
+    return { imageIds }
   } catch (error) {
     console.error('Error scraping card images:', error)
-    return []
+    return { imageIds: [], error: 'FETCH_ERROR' }
   }
 }
 
 export async function fetchAndSaveCardImages(specId: number): Promise<string[]> {
   try {
     const cookieHeader = await getCookieHeader()
-    const imageIds = await scrapeCardImages(specId, cookieHeader)
+    const { imageIds, error: scrapeError } = await scrapeCardImages(specId, cookieHeader)
+
+    console.log(`[fetchAndSaveCardImages] For ${specId}: scrapeError=${scrapeError}`)
+
+    if (scrapeError === 'CARD_NOT_FOUND') {
+      // カード詳細ページが存在しない → is_valid = false でリストから除外
+      console.log(`[fetchAndSaveCardImages] Updating is_valid=false for ${specId}`)
+      const { error } = await supabase
+        .from('psa_cards')
+        .update({ is_valid: false })
+        .eq('psa_spec_id', specId)
+
+      if (error) {
+        console.error(`[fetchAndSaveCardImages] Failed to update is_valid flag for ${specId}:`, error)
+      } else {
+        console.log(`[fetchAndSaveCardImages] Successfully updated is_valid=false for ${specId}`)
+      }
+      return []
+    }
+
+    if (scrapeError === 'NO_IMAGE') {
+      // 実際に画像がないカード → has_no_image フラグを立てる
+      const { error } = await supabase
+        .from('psa_cards')
+        .update({ has_no_image: true })
+        .eq('psa_spec_id', specId)
+
+      if (error) {
+        console.error('Failed to update has_no_image flag:', error)
+      }
+      return []
+    }
 
     if (imageIds.length > 0) {
       const { error } = await supabase
         .from('psa_cards')
-        .update({ image_urls: imageIds })
+        .update({ image_urls: imageIds, has_no_image: false })
         .eq('psa_spec_id', specId)
 
       if (error) {
@@ -278,9 +344,9 @@ async function fetchPSAPrices(specId: number, cookieHeader: string, grade: 10 | 
     let totalPrice = 0
     let daysWithSales = 0
 
-    // 直近3日のデータを集計（quantity > 0 のみ）
-    const recentDays = salesSummary.slice(-3)
-    console.log(`[fetchPSAPrices] Checking last 3 days for sales data`)
+    // 直近10日のデータを集計（quantity > 0 のみ）
+    const recentDays = salesSummary.slice(-10)
+    console.log(`[fetchPSAPrices] Checking last 10 days for sales data`)
 
     for (const day of recentDays) {
       const qty = day.metrics?.quantity || 0
@@ -296,7 +362,22 @@ async function fetchPSAPrices(specId: number, cookieHeader: string, grade: 10 | 
     console.log(`[fetchPSAPrices] totalQty=${totalQty}, totalPrice=${totalPrice}, daysWithSales=${daysWithSales}`)
 
     if (totalQty === 0) {
-      console.log(`[fetchPSAPrices] No sales data in last 3 days, returning null`)
+      // 直近10日にデータがない場合、全データから最新を取得
+      console.log(`[fetchPSAPrices] No sales data in last 10 days, checking all data`)
+      for (let i = salesSummary.length - 1; i >= 0; i--) {
+        const day = salesSummary[i]
+        const qty = day.metrics?.quantity || 0
+        const avgPrice = day.metrics?.averagePrice || 0
+        if (qty > 0) {
+          const timestamp = Math.floor(new Date(day.date).getTime() / 1000)
+          console.log(`[fetchPSAPrices] Found latest data: ${day.date} (${timestamp}), qty=${qty}, avgPrice=${avgPrice}`)
+          return {
+            quantity: -timestamp,  // 負のタイムスタンプで「参考値」を示す
+            averagePrice: Math.round(avgPrice),
+          }
+        }
+      }
+      console.log(`[fetchPSAPrices] No sales data found at all, returning null`)
       return null
     }
 
@@ -405,19 +486,30 @@ async function searchSnidanProduct(setCode: string, cardNumber: string): Promise
   }
 }
 
-async function fetchSnidanPrices(apparelId: string, grade: 10 | 9): Promise<PriceMetrics | null> {
+async function fetchSnidanPrices(apparelId: string, grade: 10 | 9 | 18): Promise<PriceMetrics | null> {
   try {
-    const conditionId = grade === 10 ? CONDITION_PSA10 : CONDITION_PSA9
+    const conditionId = grade === 10 ? CONDITION_PSA10 : grade === 9 ? CONDITION_PSA9 : CONDITION_A
     console.log(`[fetchSnidanPrices] Fetching for apparelId=${apparelId}, grade=${grade}, conditionId=${conditionId}`)
     const records = await getSalesHistory(parseInt(apparelId), conditionId)
     console.log(`[fetchSnidanPrices] Got ${records.length} total records`)
 
-    // 直近3日（72時間以内）の成約レコードを抽出
-    const recentRecords = records.filter(r => r.hoursAgo <= 72)
+    // 直近10日（240時間以内）の成約レコードを抽出
+    const recentRecords = records.filter(r => r.hoursAgo <= 240)
     console.log(`[fetchSnidanPrices] Filtered to ${recentRecords.length} records within 72 hours`)
 
     if (recentRecords.length === 0) {
-      console.log(`[fetchSnidanPrices] No recent records, returning null`)
+      // 直近10日にデータがない場合、全データから最新を取得
+      console.log(`[fetchSnidanPrices] No recent records in 240 hours, checking all data`)
+      for (let i = records.length - 1; i >= 0; i--) {
+        const record = records[i]
+        const latestTimestamp = Math.floor(new Date(record.soldAt).getTime() / 1000)
+        console.log(`[fetchSnidanPrices] Found latest data: ${record.soldAt} (${latestTimestamp}), price=${record.price}`)
+        return {
+          quantity: -latestTimestamp,  // 負のタイムスタンプで「参考値」を示す
+          averagePrice: record.price,
+        }
+      }
+      console.log(`[fetchSnidanPrices] No sales data found at all, returning null`)
       return null
     }
 
@@ -474,6 +566,7 @@ export async function fetchAndSaveCardPrices(specId: number): Promise<boolean> {
     let snidanApparel = card.snidan_apparel_id
     let snidan10Prices = null
     let snidan9Prices = null
+    let snidanAPrices = null
 
     if (!snidanApparel) {
       snidanApparel = await searchSnidanProduct(set.set_code, card.card_number)
@@ -482,6 +575,7 @@ export async function fetchAndSaveCardPrices(specId: number): Promise<boolean> {
     if (snidanApparel) {
       snidan10Prices = await fetchSnidanPrices(snidanApparel, 10)
       snidan9Prices = await fetchSnidanPrices(snidanApparel, 9)
+      snidanAPrices = await fetchSnidanPrices(snidanApparel, 18)
     }
 
     // Save to database (USD prices)
@@ -511,6 +605,11 @@ export async function fetchAndSaveCardPrices(specId: number): Promise<boolean> {
     if (snidan9Prices) {
       updateData.snidan_psa9_qty_3d = snidan9Prices.quantity
       updateData.snidan_psa9_avg_price_3d = snidan9Prices.averagePrice
+    }
+
+    if (snidanAPrices) {
+      updateData.snidan_a_qty_3d = snidanAPrices.quantity
+      updateData.snidan_a_avg_price_3d = snidanAPrices.averagePrice
     }
 
     const { error: updateError } = await supabase
