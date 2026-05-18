@@ -490,6 +490,15 @@ async function fetchSnidanPrices(apparelId: string, grade: 10 | 9 | 18): Promise
   try {
     const conditionId = grade === 10 ? CONDITION_PSA10 : grade === 9 ? CONDITION_PSA9 : CONDITION_A
     console.log(`[fetchSnidanPrices] Fetching for apparelId=${apparelId}, grade=${grade}, conditionId=${conditionId}`)
+
+    // キャッシュをバイパスして常に最新データを取得（価格取得時は最新が必須）
+    const sb = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    // 古いキャッシュを削除
+    await sb.from('snidan_sales_history').delete().eq('apparel_id', parseInt(apparelId)).eq('condition_id', conditionId)
+
     const records = await getSalesHistory(parseInt(apparelId), conditionId)
     console.log(`[fetchSnidanPrices] Got ${records.length} total records`)
 
