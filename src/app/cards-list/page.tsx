@@ -882,10 +882,16 @@ export default function CardsListPage() {
               const updatedCard = {
                 ...originalCard,
                 psa_psa10_avg_price_3d: result.psa_psa10_avg_price_3d,
+                psa_psa10_qty_3d: result.psa_psa10_qty_3d,
                 psa_psa9_avg_price_3d: result.psa_psa9_avg_price_3d,
+                psa_psa9_qty_3d: result.psa_psa9_qty_3d,
                 snidan_apparel_id: result.snidan_apparel_id,
                 snidan_psa10_avg_price_3d: result.snidan_psa10_avg_price_3d,
+                snidan_psa10_qty_3d: result.snidan_psa10_qty_3d,
                 snidan_psa9_avg_price_3d: result.snidan_psa9_avg_price_3d,
+                snidan_psa9_qty_3d: result.snidan_psa9_qty_3d,
+                snidan_a_avg_price_3d: result.snidan_a_avg_price_3d,
+                snidan_a_qty_3d: result.snidan_a_qty_3d,
                 snidan_code: result.snidan_code,
               }
               updatedCardData.set(result.specId, updatedCard)
