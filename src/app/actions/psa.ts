@@ -634,8 +634,8 @@ export async function fetchAndSaveCardPrices(specId: number): Promise<boolean> {
             }
             console.log(`[fetchAndSaveCardPrices] A-rank avg from recent: ¥${snidanAPrices.averagePrice}`)
           } else {
-            // 最新データを取得（参考値）
-            const latest = aRankRecords[aRankRecords.length - 1]
+            // 最新データを取得（参考値） - 配列は古い順なので [0] が最新
+            const latest = aRankRecords[0]
             const latestTimestamp = Math.floor(new Date(latest.soldAt).getTime() / 1000)
             snidanAPrices = {
               quantity: -latestTimestamp,
