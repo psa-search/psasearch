@@ -878,7 +878,7 @@ export default function CardsListPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-8">カード一覧</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">カード一覧 <span className="text-sm text-gray-500 font-normal">( ver.1.0.2 )</span></h1>
 
           <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -886,8 +886,12 @@ export default function CardsListPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">検索</label>
                 <input
                   type="text"
-                  inputMode="text"
-                  placeholder="セット名、カード番号、またはカード名（例: SV6 064）"
+                  name="keyword"
+                  inputMode="search"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck="false"
+                  placeholder="検索ワード"
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value)
