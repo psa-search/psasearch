@@ -594,7 +594,59 @@ export async function fetchAndSaveCardPrices(specId: number): Promise<boolean> {
     if (snidanApparel) {
       snidan10Prices = await fetchSnidanPrices(snidanApparel, 10)
       snidan9Prices = await fetchSnidanPrices(snidanApparel, 9)
-      snidanAPrices = await fetchSnidanPrices(snidanApparel, 18)
+
+      // A-ランク価格：キャッシュ問題を避けるため、販売履歴から直接計算
+      try {
+        const { getSalesHistory: importedGetSalesHistory } = await import('@/lib/snidan')
+        const CONDITION_A_VALUE = 18
+
+        // 強制的に最新データを取得するため、キャッシュを先に削除
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+
+        // キャッシュをクリア（エラーは無視）
+        try {
+          await sb.from('snidan_sales_history')
+            .delete()
+            .eq('apparel_id', parseInt(snidanApparel))
+            .eq('condition_id', CONDITION_A_VALUE)
+        } catch (e) {
+          console.log(`[fetchAndSaveCardPrices] A-rank cache clear failed, continuing`)
+        }
+
+        // 少し待ってから新しいデータを取得（キャッシュクリアが反映されるまで）
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        const aRankRecords = await importedGetSalesHistory(parseInt(snidanApparel), CONDITION_A_VALUE)
+        console.log(`[fetchAndSaveCardPrices] A-rank records: ${aRankRecords.length}`)
+
+        if (aRankRecords.length > 0) {
+          // 直近10日以内のレコードを取得
+          const recentRecords = aRankRecords.filter(r => r.hoursAgo <= 240)
+
+          if (recentRecords.length > 0) {
+            const totalPrice = recentRecords.reduce((sum, r) => sum + r.price, 0)
+            snidanAPrices = {
+              quantity: recentRecords.length,
+              averagePrice: Math.round(totalPrice / recentRecords.length),
+            }
+            console.log(`[fetchAndSaveCardPrices] A-rank avg from recent: ¥${snidanAPrices.averagePrice}`)
+          } else {
+            // 最新データを取得（参考値）
+            const latest = aRankRecords[aRankRecords.length - 1]
+            const latestTimestamp = Math.floor(new Date(latest.soldAt).getTime() / 1000)
+            snidanAPrices = {
+              quantity: -latestTimestamp,
+              averagePrice: latest.price,
+            }
+            console.log(`[fetchAndSaveCardPrices] A-rank latest (reference): ¥${snidanAPrices.averagePrice} from ${latest.soldAt}`)
+          }
+        }
+      } catch (e) {
+        console.error(`[fetchAndSaveCardPrices] Error fetching A-rank prices:`, e)
+      }
     }
 
     // Save to database (USD prices)
