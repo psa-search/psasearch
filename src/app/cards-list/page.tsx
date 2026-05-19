@@ -113,6 +113,7 @@ export default function CardsListPage() {
     rank: number
     snidan_id: string
     card_name_short: string
+    snidan_code: string | null
     psa_card: Card | null
   }
 
@@ -125,6 +126,10 @@ export default function CardsListPage() {
   const [setIdLoading, setSetIdLoading] = useState(false)
   const [setIdError, setSetIdError] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
+  const [snidanPopularLoading, setSnidanPopularLoading] = useState(false)
+  const [snidanPopularError, setSnidanPopularError] = useState<string | null>(null)
+  const [snidanPopularPriceLoading, setSnidanPopularPriceLoading] = useState(false)
+  const [snidanPopularPriceProgress, setSnidanPopularPriceProgress] = useState(0)
 
   const searchByCertNumber = async () => {
     if (!certNumberInput.trim()) {
@@ -240,6 +245,16 @@ export default function CardsListPage() {
     if (hasSearched) {
       setCurrentPage(1)
       fetchCards(1)
+      // URL を更新
+      const params = new URLSearchParams()
+      params.set('page', '1')
+      if (search) params.set('search', search)
+      params.set('sort', sortBy)
+      params.set('order', order)
+      params.set('limit', limit)
+      if (minGem10) params.set('minGem10', minGem10)
+      if (minTotal) params.set('minTotal', minTotal)
+      router.push(`?${params.toString()}`)
     }
   }, [sortBy]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -270,7 +285,8 @@ export default function CardsListPage() {
       if (minTotalVal) setMinTotal(minTotalVal)
       setHasSearched(true)
       // URL パラメータから初期化した場合、すぐに fetch を実行
-      fetchCards(pageNum)
+      const searchTerms = searchVal ? searchVal.trim().split(/\s+/).filter(t => t.length > 0) : undefined
+      fetchCards(pageNum, searchTerms)
     }
   }, []) // mount 時のみ
 
@@ -475,6 +491,15 @@ export default function CardsListPage() {
 
         setShowSnidanUrlModal(false)
         setSnidanUrl('')
+
+        // 価格が未取得なら自動取得
+        if (selectedCard && !selectedCard.snidan_psa10_avg_price_3d) {
+          console.log('[Snidan URL] Price not found, fetching...')
+          // modalPriceLoading は既に使用されているので、少し遅延させて呼ぶ
+          setTimeout(() => {
+            fetchPriceForSelectedCard()
+          }, 300)
+        }
       } else {
         alert('エラー: ' + (result.error || '不明なエラー'))
       }
@@ -949,6 +974,144 @@ export default function CardsListPage() {
     }
   }
 
+  const updateSnidanPopularPrices = async () => {
+    if (snidanPopularItems.length === 0) return
+
+    setSnidanPopularPriceLoading(true)
+    setSnidanPopularPriceProgress(0)
+
+    try {
+      // psa_card がある項目のみ対象
+      const cardsToUpdate = snidanPopularItems
+        .filter(item => item.psa_card)
+        .map(item => item.psa_card!)
+
+      if (cardsToUpdate.length === 0) {
+        console.log('[Snidan Popular Price] No cards to update')
+        return
+      }
+
+      const batchSize = 5
+      let completed = 0
+      const updatedItemMap = new Map()
+
+      for (let i = 0; i < cardsToUpdate.length; i += batchSize) {
+        const batch = cardsToUpdate.slice(i, i + batchSize)
+        const specIds = batch.map(card => card.psa_spec_id)
+
+        try {
+          const response = await fetch('/api/prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ specIds }),
+          })
+
+          const data = await response.json()
+
+          if (data.results) {
+            for (const result of data.results) {
+              updatedItemMap.set(result.specId, result)
+            }
+          }
+        } catch (err) {
+          console.error('[Snidan Popular Price] Batch error:', err)
+        }
+
+        completed += batch.length
+        setSnidanPopularPriceProgress(Math.min(completed, cardsToUpdate.length))
+      }
+
+      // snidanPopularItems を更新
+      if (updatedItemMap.size > 0) {
+        setSnidanPopularItems(prev => prev.map(item => {
+          if (item.psa_card && updatedItemMap.has(item.psa_card.psa_spec_id)) {
+            const updated = updatedItemMap.get(item.psa_card.psa_spec_id)
+            return {
+              ...item,
+              psa_card: {
+                ...item.psa_card,
+                psa_psa10_avg_price_3d: updated.psa_psa10_avg_price_3d,
+                psa_psa10_qty_3d: updated.psa_psa10_qty_3d,
+                psa_psa9_avg_price_3d: updated.psa_psa9_avg_price_3d,
+                psa_psa9_qty_3d: updated.psa_psa9_qty_3d,
+                snidan_psa10_avg_price_3d: updated.snidan_psa10_avg_price_3d,
+                snidan_psa10_qty_3d: updated.snidan_psa10_qty_3d,
+                snidan_psa9_avg_price_3d: updated.snidan_psa9_avg_price_3d,
+                snidan_psa9_qty_3d: updated.snidan_psa9_qty_3d,
+                snidan_a_avg_price_3d: updated.snidan_a_avg_price_3d,
+                snidan_a_qty_3d: updated.snidan_a_qty_3d,
+              }
+            }
+          }
+          return item
+        }))
+      }
+
+      console.log(`[Snidan Popular Price] Updated ${updatedItemMap.size} items`)
+    } catch (error) {
+      console.error('[Snidan Popular Price] Error:', error)
+    } finally {
+      setSnidanPopularPriceLoading(false)
+      setSnidanPopularPriceProgress(0)
+    }
+  }
+
+  const updateSnidanPopular = async () => {
+    setSnidanPopularLoading(true)
+    setSnidanPopularError(null)
+    try {
+      const response = await fetch('/api/snidan/fetch-popular?force=true')
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        setSnidanPopularError(data.error || '更新に失敗しました')
+        return
+      }
+
+      // 更新後、スニダン人気順データを再取得
+      await fetchCards(1)
+
+      // 自動紐付けを試みる
+      console.log('[Auto Link] Starting auto-link for snidan popular items...')
+      const popularResponse = await fetch(`/api/snidan/popular?limit=100&offset=0`)
+      const popularData = await popularResponse.json()
+
+      if (popularData.items && popularData.items.length > 0) {
+        let linkedCount = 0
+        for (const item of popularData.items) {
+          if (!item.psa_card && item.snidan_code) {
+            try {
+              const linkResponse = await fetch('/api/snidan/auto-link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  snidanId: item.snidan_id,
+                  snidanCode: item.snidan_code,
+                }),
+              })
+
+              const linkData = await linkResponse.json()
+              if (linkData.success) {
+                linkedCount++
+                console.log(`[Auto Link] Linked: ${item.snidan_code} -> specId ${linkData.specId}`)
+              }
+            } catch (err) {
+              console.error(`[Auto Link] Failed for ${item.snidan_code}:`, err)
+            }
+          }
+        }
+        console.log(`[Auto Link] Completed: ${linkedCount} items linked`)
+      }
+
+      // 再度データを再取得して反映
+      await fetchCards(1)
+    } catch (error) {
+      setSnidanPopularError((error as Error).message || '更新エラー')
+    } finally {
+      setSnidanPopularLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-12">
@@ -1111,7 +1274,42 @@ export default function CardsListPage() {
             </div>
           )}
 
-          {!loading && cards.length > 0 && (
+          {!loading && sortBy === 'snidan_popular' && (
+            <div className="mb-4 space-y-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={updateSnidanPopular}
+                  disabled={snidanPopularLoading}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 transition-colors"
+                >
+                  {snidanPopularLoading ? '更新中...' : 'スニダン人気順を更新'}
+                </button>
+                <button
+                  onClick={updateSnidanPopularPrices}
+                  disabled={snidanPopularPriceLoading || snidanPopularItems.length === 0}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:bg-gray-400 transition-colors"
+                >
+                  {snidanPopularPriceLoading ? '価格更新中...' : '価格を更新'}
+                </button>
+                {snidanPopularError && (
+                  <p className="text-sm text-red-600 flex items-center">{snidanPopularError}</p>
+                )}
+              </div>
+              {snidanPopularPriceLoading && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="w-full bg-amber-200 rounded-full h-2">
+                    <div
+                      className="bg-amber-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${snidanPopularItems.filter(item => item.psa_card).length > 0 ? (snidanPopularPriceProgress / snidanPopularItems.filter(item => item.psa_card).length) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-amber-700 mt-1">{snidanPopularPriceProgress} / {snidanPopularItems.filter(item => item.psa_card).length}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && cards.length > 0 && sortBy !== 'snidan_popular' && (
             <div className="mb-4 flex gap-2">
               <button
                 onClick={fetchImagesForAll}
@@ -1142,7 +1340,7 @@ export default function CardsListPage() {
                     <th className="px-4 py-3 text-left font-semibold text-gray-900">カード名</th>
                     <th colSpan={2} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-blue-50">GEM</th>
                     <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-green-50">公式価格</th>
-                    <th colSpan={3} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-orange-50">Snidan価格</th>
+                    <th colSpan={4} className="px-4 py-3 text-center font-semibold text-gray-900 border-l border-gray-300 bg-orange-50">Snidan価格</th>
                   </tr>
                   <tr className="bg-gray-50 border-b">
                     <th colSpan={4}></th>
@@ -1153,6 +1351,7 @@ export default function CardsListPage() {
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-green-50">利益率</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-l border-gray-300 bg-orange-50">PSA10</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">PSA9</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">A</th>
                     <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 bg-orange-50">利益率</th>
                   </tr>
                 </thead>
@@ -1201,7 +1400,7 @@ export default function CardsListPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3 text-gray-900">
-                          {card ? `${card.set?.set_code || '?'} ${card.card_number}` : '—'}
+                          {card ? `${card.set?.set_code || '?'} ${card.card_number}` : item.snidan_code || '—'}
                         </td>
                         <td className="px-4 py-3">
                           {card ? (
@@ -1221,7 +1420,10 @@ export default function CardsListPage() {
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:text-blue-800 underline"
                             >
-                              {item.card_name_short}
+                              <div className="font-medium">{item.card_name_short}</div>
+                              {item.snidan_code && (
+                                <div className="text-sm text-gray-600">{item.snidan_code}</div>
+                              )}
                             </a>
                           )}
                         </td>
@@ -1248,11 +1450,15 @@ export default function CardsListPage() {
                         </td>
                         <td className="px-4 py-3 text-right border-l border-gray-300 bg-orange-50">
                           <div className="font-semibold">{card?.snidan_psa10_avg_price_3d ? `¥${card.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{card?.snidan_psa10_qty_3d || '—'}</div>
+                          <div className="text-xs text-gray-500">{formatQtyWithDate(card?.snidan_psa10_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{card?.snidan_psa9_avg_price_3d ? `¥${card.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{card?.snidan_psa9_qty_3d || '—'}</div>
+                          <div className="text-xs text-gray-500">{formatQtyWithDate(card?.snidan_psa9_qty_3d)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
+                          <div>{(card as any)?.snidan_a_avg_price_3d ? `¥${(card as any).snidan_a_avg_price_3d.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500">{formatQtyWithDate((card as any)?.snidan_a_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
@@ -1474,6 +1680,12 @@ export default function CardsListPage() {
                 placeholder="https://snkrdunk.com/apparels/..."
                 value={snidanUrl}
                 onChange={(e) => setSnidanUrl(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && snidanUrl.trim()) {
+                    saveSnidanUrl()
+                  }
+                }}
+                autoFocus
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-500 mt-2">
@@ -1612,7 +1824,17 @@ export default function CardsListPage() {
                   )}
                 </div>
                 <button
-                  onClick={() => setSelectedCard(null)}
+                  onClick={() => {
+                    // スニダン人気順の場合、snidanPopularItems を更新
+                    if (sortBy === 'snidan_popular' && selectedCard) {
+                      setSnidanPopularItems(prev => prev.map(item =>
+                        item.psa_card?.psa_spec_id === selectedCard.psa_spec_id
+                          ? { ...item, psa_card: selectedCard as unknown as Card }
+                          : item
+                      ))
+                    }
+                    setSelectedCard(null)
+                  }}
                   className="text-gray-400 hover:text-gray-600 text-2xl"
                 >
                   ✕

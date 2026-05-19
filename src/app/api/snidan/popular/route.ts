@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     // snidan_popular を rank 順に取得
     const { data: popularItems, error } = await supabase
       .from('snidan_popular')
-      .select('rank, snidan_id, card_name')
+      .select('rank, snidan_id, card_name, snidan_code')
       .order('rank', { ascending: true })
       .range(offset, offset + limit - 1)
 
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
         total_graded, gem_count_psa10, gem_rate_psa10, image_urls,
         psa_psa10_avg_price_3d, psa_psa10_qty_3d, psa_psa9_avg_price_3d, psa_psa9_qty_3d,
         snidan_apparel_id, snidan_psa10_avg_price_3d, snidan_psa10_qty_3d,
-        snidan_psa9_avg_price_3d, snidan_psa9_qty_3d, snidan_code
+        snidan_psa9_avg_price_3d, snidan_psa9_qty_3d, snidan_a_avg_price_3d, snidan_a_qty_3d, snidan_code
       `)
       .in('snidan_apparel_id', snidanIds)
 
@@ -103,14 +103,14 @@ export async function GET(request: Request) {
       psaCardMap.set(card.snidan_apparel_id, card)
     })
 
-    // マージ - snidan_id からカード名を短縮
+    // マージ - snidan_code を使用
     const items = popularItems.map(item => {
-      const shortName = item.card_name.split('[')[0].trim()
       const snidanIdInt = parseInt(item.snidan_id)
       return {
         rank: item.rank,
         snidan_id: item.snidan_id,
-        card_name_short: shortName,
+        card_name_short: item.card_name,
+        snidan_code: item.snidan_code,
         psa_card: psaCardMap.get(snidanIdInt) || null,
       }
     })

@@ -7,11 +7,14 @@ const supabase = createClient(
 
 const CACHE_DURATION_HOURS = 6
 const ITEMS_PER_PAGE = 30
-const TOTAL_ITEMS = 300
+const TOTAL_ITEMS = 100
 const TOTAL_PAGES = Math.ceil(TOTAL_ITEMS / ITEMS_PER_PAGE)
 
 export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const force = searchParams.get('force') === 'true'
+
     // キャッシュの確認
     const { data: existing } = await supabase
       .from('snidan_popular')
@@ -20,7 +23,7 @@ export async function GET(request: Request) {
       .limit(1)
       .single()
 
-    if (existing) {
+    if (!force && existing) {
       const cachedTime = new Date(existing.cached_at)
       const now = new Date()
       const diffHours = (now.getTime() - cachedTime.getTime()) / (1000 * 60 * 60)
@@ -43,7 +46,7 @@ export async function GET(request: Request) {
     }
 
     // キャッシュが無い or 古い → 取得開始
-    const allItems: Array<{ rank: number; snidan_id: string; card_name: string }> = []
+    const allItems: Array<{ rank: number; snidan_id: string; card_name: string; snidan_code: string | null }> = []
 
     for (let page = 1; page <= TOTAL_PAGES; page++) {
       try {
@@ -72,10 +75,21 @@ export async function GET(request: Request) {
           const ariaLabel = match[2]
 
           // aria-label から ` - ¥価格` を除去
-          const cardName = ariaLabel.replace(/ - ¥[\d,]+$/, '')
+          const withoutPrice = ariaLabel.replace(/ - ¥[\d,]+$/, '')
+
+          // 最初の角括弧から snidan_code を抽出
+          // 例: "ナンジャモ SAR[SV2D 096/071](拡張パック「クレイバースト」)" -> "ナンジャモ SAR", "SV2D 096/071"
+          const codeMatch = withoutPrice.match(/^(.+?)\s*\[([^\]]+)\]/)
+          let cardName = withoutPrice
+          let snidanCode: string | null = null
+
+          if (codeMatch) {
+            cardName = codeMatch[1].trim()
+            snidanCode = codeMatch[2].trim()
+          }
 
           const rank = allItems.length + 1
-          allItems.push({ rank, snidan_id: snidanId, card_name: cardName })
+          allItems.push({ rank, snidan_id: snidanId, card_name: cardName, snidan_code: snidanCode })
 
           if (allItems.length >= TOTAL_ITEMS) break
         }
@@ -92,9 +106,16 @@ export async function GET(request: Request) {
     // DB に保存（既存データを削除して一括挿入）
     await supabase.from('snidan_popular').delete().gte('rank', 0)
 
+    const itemsToInsert = allItems.slice(0, TOTAL_ITEMS).map(item => ({
+      rank: item.rank,
+      snidan_id: item.snidan_id,
+      card_name: item.card_name,
+      snidan_code: item.snidan_code,
+    }))
+
     const { error: insertError } = await supabase
       .from('snidan_popular')
-      .insert(allItems.slice(0, TOTAL_ITEMS))
+      .insert(itemsToInsert)
 
     if (insertError) {
       throw new Error(`Failed to insert data: ${insertError.message}`)
