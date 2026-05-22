@@ -7,7 +7,7 @@ const supabase = createClient(
 
 const CACHE_DURATION_HOURS = 6
 const ITEMS_PER_PAGE = 30
-const TOTAL_ITEMS = 100
+const TOTAL_ITEMS = 200
 const TOTAL_PAGES = Math.ceil(TOTAL_ITEMS / ITEMS_PER_PAGE)
 
 export async function GET(request: Request) {

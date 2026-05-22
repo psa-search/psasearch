@@ -166,9 +166,9 @@ export default function CardsListPage() {
   const fetchCards = async (page: number, searchTerms?: string[]) => {
     setLoading(true)
     try {
-      // スニダン人気順の場合
+      // スニダン人気順の場合（常に200件全部取得）
       if (sortBy === 'snidan_popular') {
-        const params = new URLSearchParams({ limit, offset: ((page - 1) * parseInt(limit)).toString() })
+        const params = new URLSearchParams({ limit: '200', offset: '0' })
         const response = await fetch(`/api/snidan/popular?${params}`)
         if (!response.ok) {
           throw new Error('Failed to fetch Snidan popular')
@@ -1450,15 +1450,15 @@ export default function CardsListPage() {
                         </td>
                         <td className="px-4 py-3 text-right border-l border-gray-300 bg-orange-50">
                           <div className="font-semibold">{card?.snidan_psa10_avg_price_3d ? `¥${card.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{formatQtyWithDate(card?.snidan_psa10_qty_3d)}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa10_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{card?.snidan_psa9_avg_price_3d ? `¥${card.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{formatQtyWithDate(card?.snidan_psa9_qty_3d)}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa9_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{(card as any)?.snidan_a_avg_price_3d ? `¥${(card as any).snidan_a_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{formatQtyWithDate((card as any)?.snidan_a_qty_3d)}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate((card as any)?.snidan_a_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
@@ -1582,15 +1582,15 @@ export default function CardsListPage() {
                         {/* Snidan価格 */}
                         <td className="px-4 py-3 text-right border-l border-gray-300 text-gray-700">
                           <div>{card.snidan_psa10_avg_price_3d ? `¥${card.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{card.snidan_psa10_qty_3d || '—'}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card.snidan_psa10_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           <div>{card.snidan_psa9_avg_price_3d ? `¥${card.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{card.snidan_psa9_qty_3d || '—'}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card.snidan_psa9_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           <div>{card.snidan_a_avg_price_3d ? `¥${card.snidan_a_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500">{formatQtyWithDate(card.snidan_a_qty_3d)}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card.snidan_a_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
@@ -1794,19 +1794,25 @@ export default function CardsListPage() {
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="border-2 border-black px-2 py-0.5 rounded text-sm font-normal text-black bg-white">
-                      {selectedCard.set.year}年
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowSetIdModal(true)
-                        setSetIdInput('')
-                        setSetIdError(null)
-                      }}
-                      className="bg-black text-white font-bold px-2 py-0.5 rounded text-sm hover:bg-gray-800 transition-colors"
-                    >
-                      {selectedCard.set.set_code}
-                    </button>
+                    {selectedCard.set ? (
+                      <>
+                        <div className="border-2 border-black px-2 py-0.5 rounded text-sm font-normal text-black bg-white">
+                          {selectedCard.set.year}年
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowSetIdModal(true)
+                            setSetIdInput('')
+                            setSetIdError(null)
+                          }}
+                          className="bg-black text-white font-bold px-2 py-0.5 rounded text-sm hover:bg-gray-800 transition-colors"
+                        >
+                          {selectedCard.set.set_code}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-gray-600">セット情報なし</div>
+                    )}
                     <p className="text-sm text-gray-500">{selectedCard.set.set_name}</p>
                   </div>
                   <h2 className="text-2xl font-bold text-gray-900">
@@ -1991,10 +1997,10 @@ export default function CardsListPage() {
                             {selectedCard.snidan_psa10_avg_price_3d ? `¥${selectedCard.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {formatQtyWithDate(selectedCard.psa_psa10_qty_3d)}
+                            <span className="whitespace-nowrap">{formatQtyWithDate(selectedCard.psa_psa10_qty_3d)}</span>
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {formatQtyWithDate(selectedCard.snidan_psa10_qty_3d)}
+                            <span className="whitespace-nowrap">{formatQtyWithDate(selectedCard.snidan_psa10_qty_3d)}</span>
                           </td>
                         </tr>
                         <tr className="border-b hover:bg-gray-50">
@@ -2006,10 +2012,10 @@ export default function CardsListPage() {
                             {selectedCard.snidan_psa9_avg_price_3d ? `¥${selectedCard.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {formatQtyWithDate(selectedCard.psa_psa9_qty_3d)}
+                            <span className="whitespace-nowrap">{formatQtyWithDate(selectedCard.psa_psa9_qty_3d)}</span>
                           </td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {formatQtyWithDate(selectedCard.snidan_psa9_qty_3d)}
+                            <span className="whitespace-nowrap">{formatQtyWithDate(selectedCard.snidan_psa9_qty_3d)}</span>
                           </td>
                         </tr>
                         <tr className="border-b hover:bg-gray-50">
@@ -2020,7 +2026,7 @@ export default function CardsListPage() {
                           </td>
                           <td className="px-2 py-2 text-right text-gray-400">—</td>
                           <td className="px-2 py-2 text-right text-gray-700">
-                            {formatQtyWithDate((selectedCard as any).snidan_a_qty_3d)}
+                            <span className="whitespace-nowrap">{formatQtyWithDate((selectedCard as any).snidan_a_qty_3d)}</span>
                           </td>
                         </tr>
                         <tr className="bg-gray-50">
