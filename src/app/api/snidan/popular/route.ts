@@ -34,10 +34,10 @@ export async function GET(request: Request) {
       }
     }
 
-    // snidan_popular を rank 順に取得
+    // snidan_popular を rank 順に取得（Snidan データを含む）
     const { data: popularItems, error } = await supabase
       .from('snidan_popular')
-      .select('rank, snidan_id, card_name, snidan_code')
+      .select('rank, snidan_id, card_name, snidan_code, snidan_image_url, snidan_psa10_avg_price_3d, snidan_psa10_qty_3d, snidan_psa9_avg_price_3d, snidan_psa9_qty_3d, snidan_a_avg_price_3d, snidan_a_qty_3d')
       .order('rank', { ascending: true })
       .range(offset, offset + limit - 1)
 
@@ -103,14 +103,21 @@ export async function GET(request: Request) {
       psaCardMap.set(card.snidan_apparel_id, card)
     })
 
-    // マージ - snidan_code を使用
-    const items = popularItems.map(item => {
+    // マージ - Snidan データを含む
+    const items = popularItems.map((item: any) => {
       const snidanIdInt = parseInt(item.snidan_id)
       return {
         rank: item.rank,
         snidan_id: item.snidan_id,
         card_name_short: item.card_name,
         snidan_code: item.snidan_code,
+        snidan_image_url: item.snidan_image_url,
+        snidan_psa10_avg_price_3d: item.snidan_psa10_avg_price_3d,
+        snidan_psa10_qty_3d: item.snidan_psa10_qty_3d,
+        snidan_psa9_avg_price_3d: item.snidan_psa9_avg_price_3d,
+        snidan_psa9_qty_3d: item.snidan_psa9_qty_3d,
+        snidan_a_avg_price_3d: item.snidan_a_avg_price_3d,
+        snidan_a_qty_3d: item.snidan_a_qty_3d,
         psa_card: psaCardMap.get(snidanIdInt) || null,
       }
     })

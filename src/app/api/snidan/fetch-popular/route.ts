@@ -46,7 +46,19 @@ export async function GET(request: Request) {
     }
 
     // キャッシュが無い or 古い → 取得開始
-    const allItems: Array<{ rank: number; snidan_id: string; card_name: string; snidan_code: string | null }> = []
+    const allItems: Array<{
+      rank: number
+      snidan_id: string
+      card_name: string
+      snidan_code: string | null
+      snidan_image_url?: string | null
+      snidan_psa10_avg_price_3d?: number | null
+      snidan_psa10_qty_3d?: string | null
+      snidan_psa9_avg_price_3d?: number | null
+      snidan_psa9_qty_3d?: string | null
+      snidan_a_avg_price_3d?: number | null
+      snidan_a_qty_3d?: string | null
+    }> = []
 
     for (let page = 1; page <= TOTAL_PAGES; page++) {
       try {
@@ -78,7 +90,6 @@ export async function GET(request: Request) {
           const withoutPrice = ariaLabel.replace(/ - ¥[\d,]+$/, '')
 
           // 最初の角括弧から snidan_code を抽出
-          // 例: "ナンジャモ SAR[SV2D 096/071](拡張パック「クレイバースト」)" -> "ナンジャモ SAR", "SV2D 096/071"
           const codeMatch = withoutPrice.match(/^(.+?)\s*\[([^\]]+)\]/)
           let cardName = withoutPrice
           let snidanCode: string | null = null
@@ -89,7 +100,40 @@ export async function GET(request: Request) {
           }
 
           const rank = allItems.length + 1
-          allItems.push({ rank, snidan_id: snidanId, card_name: cardName, snidan_code: snidanCode })
+          const item: any = { rank, snidan_id: snidanId, card_name: cardName, snidan_code: snidanCode }
+
+          // 詳細情報を API から取得
+          try {
+            const detailResponse = await fetch(`https://snkrdunk.com/v1/apparels/${snidanId}`, {
+              headers: {
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              },
+            })
+
+            if (detailResponse.ok) {
+              const detailData = await detailResponse.json()
+
+              // 画像URLを抽出
+              if (detailData.primaryMedia && detailData.primaryMedia.imageUrl) {
+                item.snidan_image_url = detailData.primaryMedia.imageUrl
+              }
+
+              // 直近3日の価格情報を取得（API データから）
+              if (detailData.priceHistory && detailData.priceHistory.length > 0) {
+                const prices = detailData.priceHistory
+                item.snidan_psa10_avg_price_3d = prices.psa10_avg || null
+                item.snidan_psa10_qty_3d = prices.psa10_qty || null
+                item.snidan_psa9_avg_price_3d = prices.psa9_avg || null
+                item.snidan_psa9_qty_3d = prices.psa9_qty || null
+                item.snidan_a_avg_price_3d = prices.a_avg || null
+                item.snidan_a_qty_3d = prices.a_qty || null
+              }
+            }
+          } catch (detailError) {
+            console.error(`Failed to fetch details for ${snidanId}:`, detailError)
+          }
+
+          allItems.push(item)
 
           if (allItems.length >= TOTAL_ITEMS) break
         }
@@ -111,6 +155,13 @@ export async function GET(request: Request) {
       snidan_id: item.snidan_id,
       card_name: item.card_name,
       snidan_code: item.snidan_code,
+      snidan_image_url: item.snidan_image_url || null,
+      snidan_psa10_avg_price_3d: item.snidan_psa10_avg_price_3d || null,
+      snidan_psa10_qty_3d: item.snidan_psa10_qty_3d || null,
+      snidan_psa9_avg_price_3d: item.snidan_psa9_avg_price_3d || null,
+      snidan_psa9_qty_3d: item.snidan_psa9_qty_3d || null,
+      snidan_a_avg_price_3d: item.snidan_a_avg_price_3d || null,
+      snidan_a_qty_3d: item.snidan_a_qty_3d || null,
     }))
 
     const { error: insertError } = await supabase

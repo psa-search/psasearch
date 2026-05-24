@@ -39,7 +39,9 @@ export async function POST(request: Request) {
       }
 
       // snidan_code をパース: "M1S 090/063" → setCode: "M1S", cardNumber: "090"
-      const codeMatch = card.snidan_code.match(/^([A-Za-z0-9\-+]+)\s+(\d+)/)
+      // "#" を削除（例：DP4 #181 → DP4 181）
+      const normalizedCode = card.snidan_code.replace(/#\s*/, '')
+      const codeMatch = normalizedCode.match(/^([A-Za-z0-9\-+]+)\s+(\d+)/)
       if (!codeMatch) {
         notFoundCount++
         continue

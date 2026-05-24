@@ -2,6 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 interface SnidanCard {
   id: number
@@ -10,6 +16,7 @@ interface SnidanCard {
   snidan_code: string | null
   snidan_image_url: string | null
   psa_spec_id: number | null
+  is_valid: boolean
   scraped_at: string
 }
 
@@ -21,6 +28,9 @@ export default function SnidanCardsPage() {
   const [showUnlinkedOnly, setShowUnlinkedOnly] = useState(false)
   const [showMasterBallOnly, setShowMasterBallOnly] = useState(false)
   const [showNeoOnly, setShowNeoOnly] = useState(false)
+  const [showExcludedOnly, setShowExcludedOnly] = useState(false)
+  const [excludedCards, setExcludedCards] = useState<SnidanCard[]>([])
+  const [togglingApparelId, setTogglingApparelId] = useState<string | null>(null)
   const [scrapingResult, setScrapingResult] = useState<any>(null)
   const [autoLinking, setAutoLinking] = useState(false)
   const [autoLinkResult, setAutoLinkResult] = useState<any>(null)
@@ -32,6 +42,34 @@ export default function SnidanCardsPage() {
   const [linkCandidates, setLinkCandidates] = useState<any[]>([])
   const [linkCandidatesLoading, setLinkCandidatesLoading] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
+
+  // 除外/復活を切り替え
+  const toggleValidity = async (apparelId: string, currentValid: boolean) => {
+    setTogglingApparelId(apparelId)
+    try {
+      const response = await fetch('/api/snidan-cards/toggle-validity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apparelId,
+          isValid: !currentValid,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || '切り替えに失敗しました')
+      }
+
+      // 一覧を再取得
+      await fetchCards()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setTogglingApparelId(null)
+    }
+  }
 
   // 一覧取得
   const fetchCards = async () => {
@@ -69,6 +107,15 @@ export default function SnidanCardsPage() {
       )
       setCards(filteredCards)
       setStats(data.stats || { linked: 0, unlinked: 0, multiple: 0 })
+
+      // 除外済みカードを取得
+      const { data: excluded } = await supabase
+        .from('snidan_cards')
+        .select('*')
+        .eq('is_valid', false)
+        .order('id', { ascending: true })
+
+      setExcludedCards(excluded || [])
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -191,11 +238,14 @@ export default function SnidanCardsPage() {
     }
 
     try {
-      // neo/PMCG シリーズの場合は "No." を削除
+      // 特殊フォーマットの処理
       let normalizedCode = snidanCode
-      const isNeoOrPmcg = snidanCode.toLowerCase().startsWith('neo') || snidanCode.startsWith('PMCG')
+      // "#" を削除（例：DP4 #181 → DP4 181）
+      normalizedCode = normalizedCode.replace(/#\s*/, '')
+      // neo/PMCG シリーズの場合は "No." を削除
+      const isNeoOrPmcg = normalizedCode.toLowerCase().startsWith('neo') || normalizedCode.startsWith('PMCG')
       if (isNeoOrPmcg) {
-        normalizedCode = snidanCode.replace(/\s+No\.\s*/, ' ')
+        normalizedCode = normalizedCode.replace(/\s+No\.\s*/, ' ')
       }
 
       // snidanコードから setCode と cardNumber を抽出
@@ -282,7 +332,7 @@ export default function SnidanCardsPage() {
 
   useEffect(() => {
     fetchCards()
-  }, [showUnlinkedOnly, showMasterBallOnly, showNeoOnly])
+  }, [showUnlinkedOnly, showMasterBallOnly, showNeoOnly, showExcludedOnly])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -362,6 +412,18 @@ export default function SnidanCardsPage() {
               />
               <label htmlFor="neo-only" className="cursor-pointer text-gray-700">
                 neo シリーズのみ
+              </label>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="excluded-only"
+                checked={showExcludedOnly}
+                onChange={(e) => setShowExcludedOnly(e.target.checked)}
+                className="w-4 h-4 cursor-pointer"
+              />
+              <label htmlFor="excluded-only" className="cursor-pointer text-gray-700">
+                除外済みのみ表示
               </label>
             </div>
           </div>
@@ -465,7 +527,7 @@ export default function SnidanCardsPage() {
         </div>
 
         {/* テーブル */}
-        {!loading && cards.length > 0 && (
+        {!loading && ((showExcludedOnly && excludedCards.length > 0) || (!showExcludedOnly && cards.length > 0)) && (
           <div className="overflow-x-auto bg-white rounded-lg shadow-sm">
             <table className="w-full text-sm">
               <thead>
@@ -478,7 +540,7 @@ export default function SnidanCardsPage() {
                 </tr>
               </thead>
               <tbody>
-                {cards.map((card, idx) => (
+                {(showExcludedOnly ? excludedCards : cards).map((card, idx) => (
                   <tr key={card.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-4 py-3 font-mono text-gray-700 text-xs">{card.snidan_code || '—'}</td>
                     <td className="px-4 py-3 text-gray-900">
@@ -515,14 +577,35 @@ export default function SnidanCardsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {!card.psa_spec_id && (
-                        <button
-                          onClick={() => openLinkModal(card.snidan_apparel_id, card.snidan_code)}
-                          className="px-3 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700 transition-colors"
-                        >
-                          紐づけ
-                        </button>
-                      )}
+                      <div className="flex gap-2 justify-center flex-wrap">
+                        {showExcludedOnly ? (
+                          <button
+                            onClick={() => toggleValidity(card.snidan_apparel_id, card.is_valid)}
+                            disabled={togglingApparelId === card.snidan_apparel_id}
+                            className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+                          >
+                            {togglingApparelId === card.snidan_apparel_id ? '処理中...' : '復活'}
+                          </button>
+                        ) : (
+                          <>
+                            {!card.psa_spec_id && (
+                              <button
+                                onClick={() => openLinkModal(card.snidan_apparel_id, card.snidan_code)}
+                                className="px-3 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700 transition-colors"
+                              >
+                                紐づけ
+                              </button>
+                            )}
+                            <button
+                              onClick={() => toggleValidity(card.snidan_apparel_id, card.is_valid)}
+                              disabled={togglingApparelId === card.snidan_apparel_id}
+                              className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:bg-gray-400 transition-colors"
+                            >
+                              {togglingApparelId === card.snidan_apparel_id ? '処理中...' : '除外'}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

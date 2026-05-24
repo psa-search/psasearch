@@ -42,7 +42,9 @@ export async function POST(request: Request) {
       }
 
       // snidanコードから setCode と cardNumber を抽出
-      const codeMatch = card.snidan_code.match(/^([A-Za-z0-9\-+]+)\s+(\d+)/)
+      // "#" を削除（例：DP4 #181 → DP4 181）
+      const normalizedCode = card.snidan_code.replace(/#\s*/, '')
+      const codeMatch = normalizedCode.match(/^([A-Za-z0-9\-+]+)\s+(\d+)/)
       if (!codeMatch) {
         console.log(`[Masterball Link] Skipped ${card.snidan_apparel_id}: code parse failed (${card.snidan_code})`)
         skippedCount++

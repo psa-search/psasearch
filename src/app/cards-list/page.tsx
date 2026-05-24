@@ -114,10 +114,18 @@ export default function CardsListPage() {
     snidan_id: string
     card_name_short: string
     snidan_code: string | null
+    snidan_image_url?: string | null
+    snidan_psa10_avg_price_3d?: number | null
+    snidan_psa10_qty_3d?: number | null
+    snidan_psa9_avg_price_3d?: number | null
+    snidan_psa9_qty_3d?: number | null
+    snidan_a_avg_price_3d?: number | null
+    snidan_a_qty_3d?: number | null
     psa_card: Card | null
   }
 
   const [snidanPopularItems, setSnidanPopularItems] = useState<SnidanPopularItem[]>([])
+  const [updatingSnidanId, setUpdatingSnidanId] = useState<string | null>(null)
   const [linkModalTarget, setLinkModalTarget] = useState<{ snidanId: string; cardName: string } | null>(null)
   const [linkSpecIdInput, setLinkSpecIdInput] = useState('')
   const [linkLoading, setLinkLoading] = useState(false)
@@ -981,49 +989,80 @@ export default function CardsListPage() {
     setSnidanPopularPriceProgress(0)
 
     try {
-      // psa_card がある項目のみ対象
-      const cardsToUpdate = snidanPopularItems
+      // PSA カードがあるものは /api/prices で更新、ないものは Snidan API から取得
+      const psa_cardsToUpdate = snidanPopularItems
         .filter(item => item.psa_card)
         .map(item => item.psa_card!)
 
-      if (cardsToUpdate.length === 0) {
-        console.log('[Snidan Popular Price] No cards to update')
-        return
-      }
+      const snidanOnlyIds = snidanPopularItems
+        .filter(item => !item.psa_card)
+        .map(item => item.snidan_id)
 
+      const updatedItemMap = new Map()
       const batchSize = 5
       let completed = 0
-      const updatedItemMap = new Map()
 
-      for (let i = 0; i < cardsToUpdate.length; i += batchSize) {
-        const batch = cardsToUpdate.slice(i, i + batchSize)
-        const specIds = batch.map(card => card.psa_spec_id)
+      // PSA カード価格の更新
+      if (psa_cardsToUpdate.length > 0) {
+        for (let i = 0; i < psa_cardsToUpdate.length; i += batchSize) {
+          const batch = psa_cardsToUpdate.slice(i, i + batchSize)
+          const specIds = batch.map(card => card.psa_spec_id)
 
-        try {
-          const response = await fetch('/api/prices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ specIds }),
-          })
+          try {
+            const response = await fetch('/api/prices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ specIds }),
+            })
 
-          const data = await response.json()
+            const data = await response.json()
 
-          if (data.results) {
-            for (const result of data.results) {
-              updatedItemMap.set(result.specId, result)
+            if (data.results) {
+              for (const result of data.results) {
+                updatedItemMap.set(result.specId, result)
+              }
             }
+          } catch (err) {
+            console.error('[Snidan Popular Price] Batch error:', err)
           }
-        } catch (err) {
-          console.error('[Snidan Popular Price] Batch error:', err)
-        }
 
-        completed += batch.length
-        setSnidanPopularPriceProgress(Math.min(completed, cardsToUpdate.length))
+          completed += batch.length
+          setSnidanPopularPriceProgress(Math.min(completed, psa_cardsToUpdate.length + snidanOnlyIds.length))
+        }
+      }
+
+      // Snidan のみのカード価格の更新
+      if (snidanOnlyIds.length > 0) {
+        for (let i = 0; i < snidanOnlyIds.length; i += batchSize) {
+          const batch = snidanOnlyIds.slice(i, i + batchSize)
+
+          try {
+            const response = await fetch('/api/snidan/popular/update-prices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ snidanIds: batch }),
+            })
+
+            const data = await response.json()
+
+            if (data.results) {
+              for (const result of data.results) {
+                updatedItemMap.set(result.snidanId, result)
+              }
+            }
+          } catch (err) {
+            console.error('[Snidan Popular Price] Snidan batch error:', err)
+          }
+
+          completed += batch.length
+          setSnidanPopularPriceProgress(Math.min(completed, psa_cardsToUpdate.length + snidanOnlyIds.length))
+        }
       }
 
       // snidanPopularItems を更新
       if (updatedItemMap.size > 0) {
         setSnidanPopularItems(prev => prev.map(item => {
+          // PSA カードがある場合
           if (item.psa_card && updatedItemMap.has(item.psa_card.psa_spec_id)) {
             const updated = updatedItemMap.get(item.psa_card.psa_spec_id)
             return {
@@ -1043,6 +1082,20 @@ export default function CardsListPage() {
               }
             }
           }
+          // PSA カードがない場合（Snidan のみ）
+          if (!item.psa_card && updatedItemMap.has(item.snidan_id)) {
+            const updated = updatedItemMap.get(item.snidan_id)
+            return {
+              ...item,
+              snidan_image_url: updated.snidan_image_url || item.snidan_image_url,
+              snidan_psa10_avg_price_3d: updated.snidan_psa10_avg_price_3d || item.snidan_psa10_avg_price_3d,
+              snidan_psa10_qty_3d: updated.snidan_psa10_qty_3d || item.snidan_psa10_qty_3d,
+              snidan_psa9_avg_price_3d: updated.snidan_psa9_avg_price_3d || item.snidan_psa9_avg_price_3d,
+              snidan_psa9_qty_3d: updated.snidan_psa9_qty_3d || item.snidan_psa9_qty_3d,
+              snidan_a_avg_price_3d: updated.snidan_a_avg_price_3d || item.snidan_a_avg_price_3d,
+              snidan_a_qty_3d: updated.snidan_a_qty_3d || item.snidan_a_qty_3d,
+            }
+          }
           return item
         }))
       }
@@ -1053,6 +1106,44 @@ export default function CardsListPage() {
     } finally {
       setSnidanPopularPriceLoading(false)
       setSnidanPopularPriceProgress(0)
+    }
+  }
+
+  // 単一の Snidan カードの価格を更新
+  const updateSingleSnidanPrice = async (snidanId: string) => {
+    setUpdatingSnidanId(snidanId)
+
+    try {
+      const response = await fetch('/api/snidan/popular/update-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snidanIds: [snidanId] }),
+      })
+
+      const data = await response.json()
+
+      if (data.results && data.results[0]?.success) {
+        const result = data.results[0]
+        setSnidanPopularItems(prev => prev.map(item => {
+          if (item.snidan_id === snidanId) {
+            return {
+              ...item,
+              snidan_image_url: result.snidan_image_url || item.snidan_image_url,
+              snidan_psa10_avg_price_3d: result.snidan_psa10_avg_price_3d || item.snidan_psa10_avg_price_3d,
+              snidan_psa10_qty_3d: result.snidan_psa10_qty_3d || item.snidan_psa10_qty_3d,
+              snidan_psa9_avg_price_3d: result.snidan_psa9_avg_price_3d || item.snidan_psa9_avg_price_3d,
+              snidan_psa9_qty_3d: result.snidan_psa9_qty_3d || item.snidan_psa9_qty_3d,
+              snidan_a_avg_price_3d: result.snidan_a_avg_price_3d || item.snidan_a_avg_price_3d,
+              snidan_a_qty_3d: result.snidan_a_qty_3d || item.snidan_a_qty_3d,
+            }
+          }
+          return item
+        }))
+      }
+    } catch (error) {
+      console.error('[Snidan Single Price Update] Error:', error)
+    } finally {
+      setUpdatingSnidanId(null)
     }
   }
 
@@ -1300,10 +1391,10 @@ export default function CardsListPage() {
                   <div className="w-full bg-amber-200 rounded-full h-2">
                     <div
                       className="bg-amber-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${snidanPopularItems.filter(item => item.psa_card).length > 0 ? (snidanPopularPriceProgress / snidanPopularItems.filter(item => item.psa_card).length) * 100 : 0}%` }}
+                      style={{ width: `${snidanPopularItems.length > 0 ? (snidanPopularPriceProgress / snidanPopularItems.length) * 100 : 0}%` }}
                     />
                   </div>
-                  <p className="text-xs text-amber-700 mt-1">{snidanPopularPriceProgress} / {snidanPopularItems.filter(item => item.psa_card).length}</p>
+                  <p className="text-xs text-amber-700 mt-1">{snidanPopularPriceProgress} / {snidanPopularItems.length}</p>
                 </div>
               )}
             </div>
@@ -1373,7 +1464,17 @@ export default function CardsListPage() {
 
                     return (
                       <tr key={item.snidan_id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-4 py-3 text-center font-semibold text-gray-900">{item.rank}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            onClick={() => !card && updateSingleSnidanPrice(item.snidan_id)}
+                            className={`inline-flex items-center justify-center w-10 h-10 rounded-full font-bold text-black ${
+                              updatingSnidanId === item.snidan_id ? 'bg-yellow-300' :
+                              card ? 'bg-red-200' : 'bg-gray-300'
+                            } ${!card ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                          >
+                            {item.rank}
+                          </span>
+                        </td>
                         <td className="px-4 py-3">
                           {card && card.image_urls && card.image_urls.length > 0 ? (
                             <img
@@ -1382,6 +1483,13 @@ export default function CardsListPage() {
                                 : `https://d1htnxwo4o0jhw.cloudfront.net/spec/${card.psa_spec_id}/${card.image_urls[0]}.jpg`
                               }
                               alt={card.card_name}
+                              loading="lazy"
+                              className="h-16 w-12 object-cover rounded min-w-12"
+                            />
+                          ) : item.snidan_image_url ? (
+                            <img
+                              src={item.snidan_image_url}
+                              alt={item.card_name_short}
                               loading="lazy"
                               className="h-16 w-12 object-cover rounded min-w-12"
                             />
@@ -1449,16 +1557,16 @@ export default function CardsListPage() {
                           <div className="text-xs text-gray-500">{psaPriceDiffPercent !== null ? `${psaPriceDiffPercent}%` : '—'}</div>
                         </td>
                         <td className="px-4 py-3 text-right border-l border-gray-300 bg-orange-50">
-                          <div className="font-semibold">{card?.snidan_psa10_avg_price_3d ? `¥${card.snidan_psa10_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa10_qty_3d)}</div>
+                          <div className="font-semibold">{(card?.snidan_psa10_avg_price_3d || item.snidan_psa10_avg_price_3d) ? `¥${(card?.snidan_psa10_avg_price_3d || item.snidan_psa10_avg_price_3d)?.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa10_qty_3d || item.snidan_psa10_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
-                          <div>{card?.snidan_psa9_avg_price_3d ? `¥${card.snidan_psa9_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa9_qty_3d)}</div>
+                          <div>{(card?.snidan_psa9_avg_price_3d || item.snidan_psa9_avg_price_3d) ? `¥${(card?.snidan_psa9_avg_price_3d || item.snidan_psa9_avg_price_3d)?.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate(card?.snidan_psa9_qty_3d || item.snidan_psa9_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
-                          <div>{(card as any)?.snidan_a_avg_price_3d ? `¥${(card as any).snidan_a_avg_price_3d.toLocaleString()}` : '—'}</div>
-                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate((card as any)?.snidan_a_qty_3d)}</div>
+                          <div>{((card as any)?.snidan_a_avg_price_3d || item.snidan_a_avg_price_3d) ? `¥${((card as any)?.snidan_a_avg_price_3d || item.snidan_a_avg_price_3d)?.toLocaleString()}` : '—'}</div>
+                          <div className="text-xs text-gray-500 whitespace-nowrap">{formatQtyWithDate((card as any)?.snidan_a_qty_3d || item.snidan_a_qty_3d)}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 bg-orange-50">
                           <div>{snidanPriceDiff ? `¥${snidanPriceDiff.toLocaleString()}` : '—'}</div>
