@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '100', 10)
     const offset = parseInt(searchParams.get('offset') || '0', 10)
     const minGem10 = searchParams.get('minGem10') ? parseInt(searchParams.get('minGem10')!) : null
-    const minTotal = searchParams.get('minTotal') ? parseInt(searchParams.get('minTotal')!) : null
+    const minGemRate = searchParams.get('minGemRate') ? parseFloat(searchParams.get('minGemRate')!) : null
     const noImageOnly = searchParams.get('noImageOnly') === 'true'
 
     // Call RPC function for search
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       p_limit: limit,
       p_offset: offset,
       p_min_gem10: minGem10,
-      p_min_total: minTotal,
+      p_min_gem_rate: minGemRate,
       p_no_image_only: noImageOnly
     })
 

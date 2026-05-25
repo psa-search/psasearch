@@ -75,7 +75,7 @@ export default function CardsListPage() {
   const [order, setOrder] = useState('desc')
   const [limit, setLimit] = useState('100')
   const [minGem10, setMinGem10] = useState('')
-  const [minTotal, setMinTotal] = useState('')
+  const [minGemRate, setMinGemRate] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [hasSearched, setHasSearched] = useState(false)
@@ -205,7 +205,7 @@ export default function CardsListPage() {
       }
 
       if (minGem10) params.append('minGem10', minGem10)
-      if (minTotal) params.append('minTotal', minTotal)
+      if (minGemRate) params.append('minGemRate', minGemRate)
       if (showNoImageOnly) params.append('noImageOnly', 'true')
 
       // Add offset for pagination
@@ -261,7 +261,7 @@ export default function CardsListPage() {
       params.set('order', order)
       params.set('limit', limit)
       if (minGem10) params.set('minGem10', minGem10)
-      if (minTotal) params.set('minTotal', minTotal)
+      if (minGemRate) params.set('minGemRate', minGemRate)
       router.push(`?${params.toString()}`)
     }
   }, [sortBy]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -280,9 +280,9 @@ export default function CardsListPage() {
     const orderVal = searchParams.get('order')
     const limitVal = searchParams.get('limit')
     const minGem10Val = searchParams.get('minGem10')
-    const minTotalVal = searchParams.get('minTotal')
+    const minGemRateVal = searchParams.get('minGemRate')
 
-    if (page || searchVal || sortVal || orderVal || limitVal || minGem10Val || minTotalVal) {
+    if (page || searchVal || sortVal || orderVal || limitVal || minGem10Val || minGemRateVal) {
       const pageNum = page ? parseInt(page, 10) : 1
       setCurrentPage(pageNum)
       if (searchVal) setSearch(searchVal)
@@ -290,7 +290,7 @@ export default function CardsListPage() {
       if (orderVal) setOrder(orderVal)
       if (limitVal) setLimit(limitVal)
       if (minGem10Val) setMinGem10(minGem10Val)
-      if (minTotalVal) setMinTotal(minTotalVal)
+      if (minGemRateVal) setMinGemRate(minGemRateVal)
       setHasSearched(true)
       // URL パラメータから初期化した場合、すぐに fetch を実行
       const searchTerms = searchVal ? searchVal.trim().split(/\s+/).filter(t => t.length > 0) : undefined
@@ -317,7 +317,7 @@ export default function CardsListPage() {
     params.set('order', order)
     params.set('limit', limit)
     if (minGem10) params.set('minGem10', minGem10)
-    if (minTotal) params.set('minTotal', minTotal)
+    if (minGemRate) params.set('minGemRate', minGemRate)
     router.push(`?${params.toString()}`)
   }
 
@@ -1210,9 +1210,9 @@ export default function CardsListPage() {
           <h1 className="text-4xl font-bold text-gray-900 mb-8">カード一覧 <span className="text-sm text-gray-500 font-normal">( ver.1.0.2 )</span></h1>
 
           <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">検索</label>
+            <div className="flex flex-wrap items-end gap-4 mb-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">検索</label>
                 <input
                   type="text"
                   name="keyword"
@@ -1225,17 +1225,17 @@ export default function CardsListPage() {
                   onChange={(e) => {
                     setSearch(e.target.value)
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">ソート順</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">ソート順</label>
                 <select
                   value={sortBy}
                   onChange={(e) => {
                     setSortBy(e.target.value)
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="gem_rate_psa10">GEM率</option>
                   <option value="total_graded">グレード総数</option>
@@ -1249,9 +1249,9 @@ export default function CardsListPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GEM10枚数 以上</label>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">GEM10枚数</label>
                 <input
                   type="number"
                   placeholder="指定なし"
@@ -1260,28 +1260,32 @@ export default function CardsListPage() {
                     setMinGem10(e.target.value)
                   }}
                   min="0"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                <span className="text-sm text-gray-700">枚以上</span>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">グレード総数 以上</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">GEM率</label>
                 <input
                   type="number"
                   placeholder="指定なし"
-                  value={minTotal}
+                  value={minGemRate}
                   onChange={(e) => {
-                    setMinTotal(e.target.value)
+                    setMinGemRate(e.target.value)
                   }}
                   min="0"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  max="100"
+                  step="0.1"
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                <span className="text-sm text-gray-700">％以上</span>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">表示件数</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">表示件数</label>
                 <select
                   value={limit}
                   onChange={(e) => setLimit(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="50">50件</option>
                   <option value="100">100件</option>
@@ -1289,7 +1293,7 @@ export default function CardsListPage() {
                   <option value="1000">1000件</option>
                 </select>
               </div>
-              <div className="flex items-end">
+              {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1297,9 +1301,9 @@ export default function CardsListPage() {
                     onChange={(e) => setShowNoImageOnly(e.target.checked)}
                     className="w-4 h-4 cursor-pointer"
                   />
-                  <span className="text-sm font-medium text-gray-700">画像未取得のみ表示</span>
+                  <span className="text-sm font-medium text-gray-700">画像未取得のみ</span>
                 </label>
-              </div>
+              )}
               <div className="flex items-end gap-2">
                 <button
                   onClick={() => {
