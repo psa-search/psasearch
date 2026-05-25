@@ -1241,6 +1241,10 @@ export default function CardsListPage() {
                   <option value="total_graded">グレード総数</option>
                   <option value="gem_count_psa10">GEM10枚数</option>
                   <option value="snidan_popular">スニダン人気順</option>
+                  <option value="psa_price_diff_10_9">公式10/9価格差</option>
+                  <option value="psa_price_ratio_10_9">公式10/9割合</option>
+                  <option value="snidan_price_diff_10_9">スニダン10/9価格差</option>
+                  <option value="snidan_price_ratio_10_9">スニダン10/9割合</option>
                 </select>
               </div>
             </div>

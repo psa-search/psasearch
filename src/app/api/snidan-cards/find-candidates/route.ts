@@ -7,7 +7,7 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { setCode, cardNumber, masterBallOnly } = await request.json()
+    const { setCode, cardNumber, masterBallOnly, reverseHoloOnly } = await request.json()
 
     if (!setCode || !cardNumber) {
       return Response.json(
@@ -15,6 +15,9 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    // cardNumber の先頭ゼロを削除
+    const normalizedCardNumber = parseInt(cardNumber).toString()
 
     // まず set_code に合致するセットを取得
     const { data: sets, error: setsError } = await supabase
@@ -43,18 +46,38 @@ export async function POST(request: Request) {
       const setId = setRecord.psa_spec_id
       console.log(`[Find Candidates] Searching in setId: ${setId}`)
 
+      // 先頭ゼロ付きで前方一致検索
       let query = supabase
         .from('psa_cards')
         .select('psa_spec_id, card_name, variety, card_number, image_urls')
         .eq('set_id', setId)
-        .eq('card_number', cardNumber)
+        .ilike('card_number', `${cardNumber}%`)
         .eq('is_valid', true)
 
       if (masterBallOnly) {
         query = query.ilike('variety', '%Master Ball%')
       }
 
-      const { data: candidates } = await query
+      let { data: candidates } = await query
+
+      // 見つからない場合は先頭ゼロなしで前方一致検索
+      if (!candidates || candidates.length === 0) {
+        let query2 = supabase
+          .from('psa_cards')
+          .select('psa_spec_id, card_name, variety, card_number, image_urls')
+          .eq('set_id', setId)
+          .ilike('card_number', `${normalizedCardNumber}%`)
+          .eq('is_valid', true)
+
+        if (masterBallOnly) {
+          query2 = query2.ilike('variety', '%Master Ball%')
+        }
+
+        const { data: candidates2 } = await query2
+        if (candidates2 && candidates2.length > 0) {
+          candidates = candidates2
+        }
+      }
 
       if (candidates && candidates.length > 0) {
         allCandidates.push(...candidates)
@@ -69,7 +92,7 @@ export async function POST(request: Request) {
     }
 
     // set_code と画像を追加
-    const flattenedCandidates = (candidates || []).map((c: any) => ({
+    let flattenedCandidates = (candidates || []).map((c: any) => ({
       psa_spec_id: c.psa_spec_id,
       card_name: c.card_name,
       variety: c.variety,
@@ -77,6 +100,20 @@ export async function POST(request: Request) {
       set_code: setCode,
       image_urls: c.image_urls
     }))
+
+    // // Reverse Holo のみフィルタリング
+    // if (1 == 1) {
+    //   flattenedCandidates = flattenedCandidates.filter((c: any) =>
+    //     c.variety && c.variety == 'Reverse Holo'
+    //   )
+    // }
+
+    // カード名の昇順、同じ名前の場合はバリエーションの昇順でソート
+    flattenedCandidates.sort((a: any, b: any) => {
+      const nameCompare = (a.card_name || '').localeCompare(b.card_name || '', 'ja')
+      if (nameCompare !== 0) return nameCompare
+      return (a.variety || '').localeCompare(b.variety || '', 'ja')
+    })
 
     return Response.json({
       success: true,

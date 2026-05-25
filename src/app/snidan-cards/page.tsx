@@ -38,7 +38,7 @@ export default function SnidanCardsPage() {
   const [syncResult, setSyncResult] = useState<any>(null)
   const [scrapingVariations, setScrapingVariations] = useState(false)
   const [variationsResult, setVariationsResult] = useState<any>(null)
-  const [linkModalTarget, setLinkModalTarget] = useState<{ apparelId: string; snidanCode: string | null } | null>(null)
+  const [linkModalTarget, setLinkModalTarget] = useState<{ apparelId: string; snidanCode: string | null; cardName: string } | null>(null)
   const [linkCandidates, setLinkCandidates] = useState<any[]>([])
   const [linkCandidatesLoading, setLinkCandidatesLoading] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -46,6 +46,10 @@ export default function SnidanCardsPage() {
   // 除外/復活を切り替え
   const toggleValidity = async (apparelId: string, currentValid: boolean) => {
     setTogglingApparelId(apparelId)
+
+    // スクロール位置を記憶
+    const scrollPosition = window.scrollY
+
     try {
       const response = await fetch('/api/snidan-cards/toggle-validity', {
         method: 'POST',
@@ -64,6 +68,11 @@ export default function SnidanCardsPage() {
 
       // 一覧を再取得
       await fetchCards()
+
+      // スクロール位置を復元（遅延）
+      setTimeout(() => {
+        window.scrollTo(0, scrollPosition)
+      }, 500)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -94,10 +103,10 @@ export default function SnidanCardsPage() {
       let filteredCards = (data.cards || []).filter(
         (card: SnidanCard) => {
           if (!card.snidan_code) return true
-          // "M4 " で始まるコード、または " EN " を含むコードを除外
-          if (card.snidan_code.startsWith('M4 ') || card.snidan_code.includes(' EN ')) {
-            return false
-          }
+          // // "M4 " で始まるコード、または " EN " を含むコードを除外
+          // if (card.snidan_code.startsWith('M4 ') || card.snidan_code.includes(' EN ')) {
+          //   return false
+          // }
           // "neo シリーズのみ表示" がチェックされている場合
           if (showNeoOnly) {
             return card.snidan_code.toLowerCase().startsWith('neo')
@@ -225,8 +234,8 @@ export default function SnidanCardsPage() {
   }
 
   // モーダルを開いて候補を検索
-  const openLinkModal = async (apparelId: string, snidanCode: string | null) => {
-    setLinkModalTarget({ apparelId, snidanCode })
+  const openLinkModal = async (apparelId: string, snidanCode: string | null, cardName: string) => {
+    setLinkModalTarget({ apparelId, snidanCode, cardName })
     setLinkCandidates([])
     setLinkError(null)
     setLinkCandidatesLoading(true)
@@ -242,9 +251,46 @@ export default function SnidanCardsPage() {
       let normalizedCode = snidanCode
       // "#" を削除（例：DP4 #181 → DP4 181）
       normalizedCode = normalizedCode.replace(/#\s*/, '')
-      // neo/PMCG シリーズの場合は "No." を削除
-      const isNeoOrPmcg = normalizedCode.toLowerCase().startsWith('neo') || normalizedCode.startsWith('PMCG')
-      if (isNeoOrPmcg) {
+
+      // PMCG シリーズの特殊処理（PMCG- または PMCG で始まる）
+      if (normalizedCode.startsWith('PMCG')) {
+        // PMCG-Blue/Red/Green/QS など または PMCGI など をセットコードに変換
+        const pmcgMatch = normalizedCode.match(/^PMCG-?([A-Za-z0-9]+)\s+No\.(\d+)/)
+        if (pmcgMatch) {
+          const variant = pmcgMatch[1].toLowerCase()
+          const cardNum = pmcgMatch[2]
+
+          let setLetter = ''
+          if (variant.startsWith('blue')) {
+            setLetter = 'E' // OPE
+          } else if (variant.startsWith('red')) {
+            setLetter = 'R' // OPR
+          } else if (variant.startsWith('green')) {
+            setLetter = 'G' // OPG
+          } else if (variant.startsWith('g')) {
+            setLetter = 'G' // OPG (G1, G2, G3)
+          } else if (variant.startsWith('p')) {
+            setLetter = 'M' // OPM
+          } else {
+            // その他（QS, I など）は最初の大文字を使用
+            const match = pmcgMatch[1].match(/^[A-Za-z]/i)
+            if (match) {
+              setLetter = match[0].toUpperCase()
+            }
+          }
+
+          if (setLetter) {
+            normalizedCode = `OP${setLetter} ${cardNum}`
+          } else {
+            // "No." を削除
+            normalizedCode = normalizedCode.replace(/\s+No\.\s*/, ' ')
+          }
+        } else {
+          // "No." を削除
+          normalizedCode = normalizedCode.replace(/\s+No\.\s*/, ' ')
+        }
+      } else if (normalizedCode.toLowerCase().startsWith('neo')) {
+        // neo シリーズの場合は "No." を削除
         normalizedCode = normalizedCode.replace(/\s+No\.\s*/, ' ')
       }
 
@@ -259,11 +305,7 @@ export default function SnidanCardsPage() {
       let setCode = codeMatch[1]
       let cardNumber = codeMatch[2]
 
-      // neo/PMCG シリーズの場合は先頭の0を削除
-      if (setCode.toLowerCase().startsWith('neo') || setCode.startsWith('PMCG')) {
-        cardNumber = parseInt(cardNumber).toString()
-      }
-
+      // cardNumber をそのまま送る（find-candidates で先頭ゼロの有無で検索）
       const response = await fetch('/api/snidan-cards/find-candidates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -317,8 +359,10 @@ export default function SnidanCardsPage() {
       // 一覧を再取得
       await fetchCards()
 
-      // スクロール位置を復元
-      window.scrollTo(0, scrollPosition)
+      // スクロール位置を復元（遅延）
+      setTimeout(() => {
+        window.scrollTo(0, scrollPosition)
+      }, 500)
 
       // モーダルを閉じる
       setLinkModalTarget(null)
@@ -333,6 +377,21 @@ export default function SnidanCardsPage() {
   useEffect(() => {
     fetchCards()
   }, [showUnlinkedOnly, showMasterBallOnly, showNeoOnly, showExcludedOnly])
+
+  useEffect(() => {
+    if (!linkModalTarget) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLinkModalTarget(null)
+        setLinkCandidates([])
+        setLinkError(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [linkModalTarget])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -590,7 +649,7 @@ export default function SnidanCardsPage() {
                           <>
                             {!card.psa_spec_id && (
                               <button
-                                onClick={() => openLinkModal(card.snidan_apparel_id, card.snidan_code)}
+                                onClick={() => openLinkModal(card.snidan_apparel_id, card.snidan_code, card.snidan_name_ja)}
                                 className="px-3 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700 transition-colors"
                               >
                                 紐づけ
@@ -623,7 +682,8 @@ export default function SnidanCardsPage() {
       {linkModalTarget && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4 p-6 max-h-96 overflow-y-auto">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">紐づけ候補を選択</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">紐づけ候補を選択</h3>
+            <p className="text-sm text-gray-600 mb-4">{linkModalTarget.cardName}</p>
 
             {linkError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
